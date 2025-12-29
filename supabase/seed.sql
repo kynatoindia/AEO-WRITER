@@ -1,0 +1,77 @@
+-- Seed data for development and testing
+-- This file should only be run in development environments
+
+-- Insert test user profile (this would normally be created by the trigger)
+-- Note: This assumes you have a test user in auth.users with this ID
+-- You'll need to replace this with an actual user ID from your auth.users table
+
+-- Example project data (replace user_id with actual user ID)
+-- INSERT INTO projects (
+--   user_id,
+--   topic,
+--   status,
+--   competitor_urls,
+--   tone,
+--   format
+-- ) VALUES (
+--   '00000000-0000-0000-0000-000000000000', -- Replace with actual user ID
+--   'How to Build a SaaS Application with Next.js',
+--   'draft',
+--   ARRAY[
+--     'https://vercel.com/guides/nextjs-saas',
+--     'https://supabase.com/docs/guides/getting-started/tutorials/with-nextjs',
+--     'https://nextjs.org/learn/dashboard-app'
+--   ],
+--   'professional',
+--   'how-to'
+-- );
+
+-- Example content sections (uncomment and update project_id after creating a project)
+-- INSERT INTO content_sections (
+--   project_id,
+--   section_order,
+--   heading,
+--   goal,
+--   sub_sections,
+--   content_elements,
+--   data_sources
+-- ) VALUES (
+--   '00000000-0000-0000-0000-000000000000', -- Replace with actual project ID
+--   1,
+--   'Introduction to SaaS Development',
+--   'Provide an overview of SaaS development and set expectations',
+--   '[
+--     {"id": "1", "heading": "What is SaaS?", "keyPoints": ["Software as a Service definition", "Benefits of SaaS model"]},
+--     {"id": "2", "heading": "Why Next.js?", "keyPoints": ["Full-stack capabilities", "Performance benefits", "Developer experience"]}
+--   ]'::jsonb,
+--   ARRAY['direct-answer', 'bullet-points'],
+--   ARRAY['https://vercel.com/guides/nextjs-saas']
+-- );
+
+-- Example usage analytics
+-- INSERT INTO usage_analytics (
+--   user_id,
+--   project_id,
+--   operation_type,
+--   tokens_used,
+--   cost_usd,
+--   api_provider,
+--   model_used,
+--   metadata
+-- ) VALUES (
+--   '00000000-0000-0000-0000-000000000000', -- Replace with actual user ID
+--   '00000000-0000-0000-0000-000000000000', -- Replace with actual project ID
+--   'research',
+--   1500,
+--   0.045,
+--   'openai',
+--   'gpt-4',
+--   '{"competitor_urls_analyzed": 3, "processing_time_ms": 2500}'::jsonb
+-- );
+
+-- Note: To use this seed data:
+-- 1. Create a user account through your application
+-- 2. Get the user ID from auth.users table
+-- 3. Replace the placeholder UUIDs above with actual IDs
+-- 4. Uncomment the INSERT statements
+-- 5. Run this file against your Supabase database
