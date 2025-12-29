@@ -113,6 +113,34 @@ export type InngestEvents = {
       priority?: 'high' | 'normal' | 'low';
     };
   };
+  'content/strategy-generate': {
+    data: {
+      userId: string;
+      projectId: string;
+      researchData: any;
+      topic: string;
+      tone: string;
+      format: string;
+    };
+  };
+  'content/section-generate': {
+    data: {
+      userId: string;
+      projectId: string;
+      sectionId: string;
+      section: any;
+      blueprint: any;
+      researchData: any;
+      priority?: 'high' | 'normal' | 'low';
+    };
+  };
+  'content/final-assembly': {
+    data: {
+      userId: string;
+      projectId: string;
+      blueprint: any;
+    };
+  };
   'content/research-completed': {
     data: {
       userId: string;
@@ -188,9 +216,11 @@ export const EVENT_PRIORITIES = {
 // Concurrency limits for different event types to prevent rate limiting
 export const CONCURRENCY_LIMITS = {
   'content/generate': 3, // Strict limit for AI API calls to prevent OpenAI rate limiting
+  'content/strategy-generate': 1, // Sequential strategy generation for quality
+  'content/section-generate': 2, // Parallel section generation with limit
+  'content/final-assembly': 1, // Sequential final assembly
   'project/research-started': 2, // Limit research operations
   'project/content-generation-started': 1, // Sequential content generation to manage costs
-  'content/section-generate': 2, // Limit section generation
   'ai/openai-request': 5, // Global OpenAI request limit
   'ai/gemini-request': 8, // Higher limit for Gemini
   default: 10,

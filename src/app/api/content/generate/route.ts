@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check quota (assuming free plan for now - get from DB in production)
-    const quotaResult = await withQuotaCheck(user.id, 'contentGeneration', 'free');
+    const quotaResult = await withQuotaCheck(user.id, { quotaType: 'contentGeneration' });
     
     if (quotaResult instanceof NextResponse) {
       return quotaResult;

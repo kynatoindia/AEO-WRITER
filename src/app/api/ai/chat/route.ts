@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check API quota
-    const quotaResult = await withQuotaCheck(user.id, 'apiCalls', 'free');
+    const quotaResult = await withQuotaCheck(user.id, { quotaType: 'apiCalls' });
     
     if (quotaResult instanceof Response) {
       return quotaResult;
@@ -44,20 +44,13 @@ export async function POST(request: NextRequest) {
     };
 
     // Stream AI response
-    const result = await streamAIText(prompt, aiConfig);
+    const streamingResponse = await streamAIText(prompt, 'content', user.id);
 
     // Increment usage after successful generation
     await incrementUsage(user.id, 'apiCalls');
 
-    // Return streaming response with rate limit headers
-    const response = result.toDataStreamResponse();
-    
-    // Add rate limit headers
-    Object.entries(rateLimitHeaders).forEach(([key, value]) => {
-      response.headers.set(key, value);
-    });
-
-    return response;
+    // Return the AI SDK stream directly
+    return streamingResponse.stream.toDataStreamResponse();
   } catch (error) {
     console.error('AI chat error:', error);
     return new Response(

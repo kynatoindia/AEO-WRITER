@@ -500,6 +500,13 @@ export const handleSubscriptionUpdate = inngest.createFunction(
   }
 );
 
+// Import research pipeline functions
+import { researchPipelineFunctions } from './research-pipeline';
+// Import content generation pipeline functions
+import { contentGenerationFunctions } from './content-generation-pipeline-simple';
+// Import project initialization functions
+import { projectInitializationFunctions } from './project-initialization';
+
 // Export all enhanced functions
 export const inngestFunctions = [
   handleUserRegistration,
@@ -508,4 +515,7 @@ export const inngestFunctions = [
   handleBlueprintGeneration,
   handleQuotaExceeded,
   handleSubscriptionUpdate,
+  ...researchPipelineFunctions,
+  ...contentGenerationFunctions,
+  ...projectInitializationFunctions,
 ];

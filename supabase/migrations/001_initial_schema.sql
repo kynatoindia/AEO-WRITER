@@ -23,6 +23,7 @@ CREATE TABLE projects (
   seo_metadata JSONB,
   token_usage JSONB,
   cost_breakdown JSONB,
+  research_data JSONB,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
 );

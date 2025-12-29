@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { Database } from '@/lib/types';
+import { Database } from '@/lib/database.types';
 
 // Production-grade connection pooling configuration
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;

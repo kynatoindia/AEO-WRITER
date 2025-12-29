@@ -1,6 +1,6 @@
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
-import { Database } from '@/lib/types';
+import { Database } from '@/lib/database.types';
 
 // Server-side Supabase client for use in Server Components
 export const createServerSupabaseClient = async () => {
