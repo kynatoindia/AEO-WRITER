@@ -169,21 +169,45 @@ export function ProjectCreationForm({ onSuccess, onCancel }: ProjectCreationForm
       submitData.append('tone', formData.tone);
       submitData.append('format', formData.format);
       
+      // Only append brandDocument if a file is selected
       if (formData.brandDocument) {
         submitData.append('brandDocument', formData.brandDocument);
       }
 
-      // Simulate upload progress
-      const progressInterval = setInterval(() => {
-        setUploadProgress(prev => {
-          if (prev >= 90) {
-            clearInterval(progressInterval);
-            return prev;
-          }
-          return prev + 10;
-        });
-      }, 200);
+      // Enhanced progress simulation with security steps
+      const progressSteps = [
+        { progress: 10, message: 'Validating project data...' },
+        { progress: 25, message: 'Checking file security...' },
+        { progress: 40, message: 'Performing virus scan...' },
+        { progress: 60, message: 'Uploading files...' },
+        { progress: 80, message: 'Creating project...' },
+        { progress: 95, message: 'Starting background processing...' },
+      ];
 
+      let currentStep = 0;
+      const progressInterval = setInterval(() => {
+        if (currentStep < progressSteps.length) {
+          const step = progressSteps[currentStep];
+          setUploadProgress(step.progress);
+          toast.info(step.message);
+          currentStep++;
+        } else {
+          clearInterval(progressInterval);
+        }
+      }, 800);
+
+      // For debugging - try the debug endpoint first
+      console.log('Testing debug endpoint...');
+      const debugResponse = await fetch('/api/debug', {
+        method: 'POST',
+        body: submitData,
+      });
+      
+      console.log('Debug response status:', debugResponse.status);
+      const debugResult = await debugResponse.json();
+      console.log('Debug result:', debugResult);
+      
+      // Now try the actual projects endpoint
       const response = await fetch('/api/projects', {
         method: 'POST',
         body: submitData,
@@ -192,13 +216,56 @@ export function ProjectCreationForm({ onSuccess, onCancel }: ProjectCreationForm
       clearInterval(progressInterval);
       setUploadProgress(100);
 
-      const result = await response.json();
+      // Check if the response is ok
+      if (!response.ok) {
+        console.error('HTTP Error:', response.status, response.statusText);
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      let result;
+      try {
+        result = await response.json();
+      } catch (parseError) {
+        console.error('Failed to parse response as JSON:', parseError);
+        throw new Error('Invalid response from server');
+      }
+
+      console.log('API Response:', result);
 
       if (!result.success) {
+        console.error('Project creation failed:', result);
+        
+        // Handle specific error types
+        if (result.error?.code === 'VALIDATION_ERROR') {
+          console.error('Validation errors:', result.error.details?.validationErrors);
+          const validationErrors = result.error.details?.validationErrors || [];
+          const errorMessages = validationErrors.map((err: any) => `${err.field}: ${err.message}`).join(', ');
+          toast.error(`Validation failed: ${errorMessages}`);
+        } else if (result.error?.code === 'VIRUS_DETECTED') {
+          toast.error('File failed virus scan. Please upload a different file.');
+        } else if (result.error?.code === 'FILE_VALIDATION_ERROR') {
+          toast.error('File validation failed. Please check file type and size.');
+        } else if (result.error?.code === 'QUOTA_EXCEEDED') {
+          toast.error('Project creation quota exceeded. Please upgrade your plan.');
+        } else {
+          toast.error(result.error?.message || 'Failed to create project');
+        }
         throw new Error(result.error?.message || 'Failed to create project');
       }
 
-      toast.success('Project created successfully! Research is starting in the background.');
+      // Show enhanced success message with security info
+      const securityInfo = result.data.securityInfo;
+      if (securityInfo?.virusScanPassed) {
+        toast.success('Project created successfully! File passed security scan. Research is starting in the background.');
+      } else {
+        toast.success('Project created successfully! Research is starting in the background.');
+      }
+
+      // Show processing information
+      if (result.data.processingInfo) {
+        const estimatedTime = new Date(result.data.processingInfo.estimatedCompletionTime);
+        toast.info(`Estimated completion: ${estimatedTime.toLocaleTimeString()}`);
+      }
       
       if (onSuccess) {
         onSuccess(result.data.project);
@@ -208,7 +275,16 @@ export function ProjectCreationForm({ onSuccess, onCancel }: ProjectCreationForm
 
     } catch (error: any) {
       console.error('Project creation error:', error);
-      toast.error(error.message || 'Failed to create project');
+      
+      // Enhanced error handling
+      if (error.message.includes('virus')) {
+        toast.error('Security scan failed. Please try with a different file.');
+      } else if (error.message.includes('quota')) {
+        toast.error('Project limit reached. Please upgrade your plan or delete existing projects.');
+      } else {
+        toast.error(error.message || 'Failed to create project');
+      }
+      
       setUploadProgress(0);
     } finally {
       setIsSubmitting(false);

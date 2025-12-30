@@ -239,7 +239,7 @@ export const generateContentSection = inngest.createFunction(
     
     // Update section status to 'writing'
     await step.run('update-section-status-writing', async () => {
-      const supabase = createClient();
+      const supabase = await createRouteClient();
       
       const { error } = await supabase
         .from('content_sections')
@@ -268,7 +268,7 @@ export const generateContentSection = inngest.createFunction(
     
     // Get previously written sections for context
     const previousSections = await step.run('get-previous-sections', async () => {
-      const supabase = createClient();
+      const supabase = await createRouteClient();
       
       const { data: sections, error } = await supabase
         .from('content_sections')
@@ -329,7 +329,7 @@ export const generateContentSection = inngest.createFunction(
     
     // Store generated content and update section status
     await step.run('store-section-content', async () => {
-      const supabase = createClient();
+      const supabase = await createRouteClient();
       
       const { error } = await supabase
         .from('content_sections')
@@ -363,9 +363,9 @@ export const generateContentSection = inngest.createFunction(
       retries: RETRY_CONFIG['database-operation'].attempts,
     });
     
-    // Check if all sections are complete and trigger final assembly
+    // Check if all sections are complete and trigger finalization
     await step.run('check-project-completion', async () => {
-      const supabase = createClient();
+      const supabase = await createRouteClient();
       
       const { data: sections, error } = await supabase
         .from('content_sections')
@@ -380,9 +380,9 @@ export const generateContentSection = inngest.createFunction(
       const allCompleted = sections?.every(s => s.status === 'completed');
       
       if (allCompleted) {
-        // Trigger final content assembly and polishing
+        // Trigger content finalization pipeline (includes assembly, polishing, SEO, FAQ, etc.)
         await inngest.send({
-          name: 'content/final-assembly',
+          name: 'content/all-sections-complete',
           data: {
             userId,
             projectId,
@@ -390,7 +390,7 @@ export const generateContentSection = inngest.createFunction(
           }
         });
         
-        console.log(`All sections completed for project ${projectId}, triggering final assembly`);
+        console.log(`All sections completed for project ${projectId}, triggering content finalization`);
       }
     });
     
@@ -439,7 +439,7 @@ export const assembleAndPolishContent = inngest.createFunction(
     
     // Fetch all completed sections
     const allSections = await step.run('fetch-all-sections', async () => {
-      const supabase = createClient();
+      const supabase = await createRouteClient();
       
       const { data: sections, error } = await supabase
         .from('content_sections')
@@ -537,7 +537,7 @@ export const assembleAndPolishContent = inngest.createFunction(
     
     // Store final content and update project status
     await step.run('store-final-content', async () => {
-      const supabase = createClient();
+      const supabase = await createRouteClient();
       
       const { error } = await supabase
         .from('projects')

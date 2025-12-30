@@ -1,6 +1,45 @@
-import Link from 'next/link';
+'use client';
 
-export default function AuthCodeErrorPage() {
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { Suspense } from 'react';
+
+function ErrorContent() {
+  const searchParams = useSearchParams();
+  const error = searchParams.get('error');
+  const message = searchParams.get('message');
+
+  const getErrorDetails = () => {
+    switch (error) {
+      case 'no_code':
+        return {
+          title: 'Invalid Authentication Link',
+          description: 'The authentication link appears to be malformed or incomplete.',
+          suggestion: 'Please try signing up or logging in again.'
+        };
+      case 'exchange_failed':
+        return {
+          title: 'Authentication Failed',
+          description: message || 'Failed to complete the authentication process.',
+          suggestion: 'The link may have expired. Please try signing up or logging in again.'
+        };
+      case 'callback_error':
+        return {
+          title: 'Authentication Error',
+          description: 'An unexpected error occurred during authentication.',
+          suggestion: 'Please try again or contact support if the problem persists.'
+        };
+      default:
+        return {
+          title: 'Authentication Error',
+          description: message || 'Sorry, we couldn\'t authenticate your account. This could be due to an expired or invalid link.',
+          suggestion: 'Please try signing in again.'
+        };
+    }
+  };
+
+  const errorDetails = getErrorDetails();
+
   return (
     <div className="bg-white py-8 px-6 shadow rounded-lg">
       <div className="text-center">
@@ -23,12 +62,28 @@ export default function AuthCodeErrorPage() {
         </div>
         
         <h2 className="text-2xl font-bold text-gray-900 mb-4">
-          Authentication Error
+          {errorDetails.title}
         </h2>
         
-        <p className="text-gray-600 mb-6">
-          Sorry, we couldn't authenticate your account. This could be due to an expired or invalid link.
+        <p className="text-gray-600 mb-2">
+          {errorDetails.description}
         </p>
+        
+        <p className="text-sm text-gray-500 mb-6">
+          {errorDetails.suggestion}
+        </p>
+        
+        {error && (
+          <div className="mb-6 p-3 bg-gray-50 rounded text-xs text-gray-600">
+            <strong>Error Code:</strong> {error}
+            {message && (
+              <>
+                <br />
+                <strong>Details:</strong> {message}
+              </>
+            )}
+          </div>
+        )}
         
         <div className="space-y-3">
           <Link
@@ -36,6 +91,13 @@ export default function AuthCodeErrorPage() {
             className="block w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors"
           >
             Try signing in again
+          </Link>
+          
+          <Link
+            href="/auth/register"
+            className="block w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 transition-colors"
+          >
+            Create a new account
           </Link>
           
           <Link
@@ -47,5 +109,17 @@ export default function AuthCodeErrorPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function AuthCodeErrorPage() {
+  return (
+    <Suspense fallback={
+      <div className="bg-white py-8 px-6 shadow rounded-lg">
+        <div className="text-center">Loading...</div>
+      </div>
+    }>
+      <ErrorContent />
+    </Suspense>
   );
 }

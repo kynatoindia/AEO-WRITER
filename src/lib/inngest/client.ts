@@ -141,6 +141,27 @@ export type InngestEvents = {
       blueprint: any;
     };
   };
+  'content/finalize': {
+    data: {
+      userId: string;
+      projectId: string;
+      generatedContent: string;
+      blueprint: any;
+    };
+  };
+  'content/all-sections-complete': {
+    data: {
+      userId: string;
+      projectId: string;
+      blueprint: any;
+    };
+  };
+  'content/manual-finalize': {
+    data: {
+      userId: string;
+      projectId: string;
+    };
+  };
   'content/research-completed': {
     data: {
       userId: string;
@@ -219,6 +240,7 @@ export const CONCURRENCY_LIMITS = {
   'content/strategy-generate': 1, // Sequential strategy generation for quality
   'content/section-generate': 2, // Parallel section generation with limit
   'content/final-assembly': 1, // Sequential final assembly
+  'content/finalize': 2, // Content finalization with SEO and FAQ generation
   'project/research-started': 2, // Limit research operations
   'project/content-generation-started': 1, // Sequential content generation to manage costs
   'ai/openai-request': 5, // Global OpenAI request limit

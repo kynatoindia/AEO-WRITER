@@ -506,6 +506,8 @@ import { researchPipelineFunctions } from './research-pipeline';
 import { contentGenerationFunctions } from './content-generation-pipeline-simple';
 // Import project initialization functions
 import { projectInitializationFunctions } from './project-initialization';
+// Import content finalization functions
+import { contentFinalizationFunctions } from './content-finalization-pipeline';
 
 // Export all enhanced functions
 export const inngestFunctions = [
@@ -518,4 +520,5 @@ export const inngestFunctions = [
   ...researchPipelineFunctions,
   ...contentGenerationFunctions,
   ...projectInitializationFunctions,
+  ...contentFinalizationFunctions,
 ];

@@ -1,11 +1,11 @@
 // Core application types
-export type ProjectStatus = 'draft' | 'researching' | 'planning' | 'writing' | 'completed' | 'error';
+export type ProjectStatus = 'draft' | 'researching' | 'planning' | 'writing' | 'finalizing' | 'completed' | 'error';
 export type ContentTone = 'professional' | 'witty' | 'data-driven';
 export type ContentFormat = 'how-to' | 'listicle' | 'case-study';
 export type SectionStatus = 'pending' | 'writing' | 'completed';
 export type SubscriptionPlan = 'free' | 'pro' | 'enterprise';
 export type ContentElementType = 'direct-answer' | 'bullet-points' | 'comparison-table' | 'faq' | 'code-block';
-export type OperationType = 'research' | 'planning' | 'writing' | 'polish' | 'export';
+export type OperationType = 'research' | 'planning' | 'writing' | 'polish' | 'finalization' | 'export';
 export type APIProvider = 'openai' | 'tavily';
 export type ExportFormat = 'markdown' | 'html' | 'pdf';
 export type Theme = 'light' | 'dark' | 'system';
