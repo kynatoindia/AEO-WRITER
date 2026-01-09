@@ -66,6 +66,8 @@ function LiveWriterContent({ projectId, onComplete, onError }: LiveWriterProps) 
   }>>({});
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [generatedContent, setGeneratedContent] = useState<Record<string, string>>({});
+  const [isDemoRunning, setIsDemoRunning] = useState(false);
+  const [demoContent, setDemoContent] = useState<Record<string, string>>({});
   
   const {
     progress,
@@ -156,6 +158,93 @@ function LiveWriterContent({ projectId, onComplete, onError }: LiveWriterProps) 
       console.error('Failed to start generation:', err);
     }
   };
+
+  const startDemoGeneration = async () => {
+    if (isDemoRunning) return;
+    
+    setIsDemoRunning(true);
+    setDemoContent({});
+    
+    // Reset section progress for demo
+    setSectionProgress({
+      'mock-1': { status: 'pending', wordCount: 0 },
+      'mock-2': { status: 'pending', wordCount: 0 },
+      'mock-3': { status: 'pending', wordCount: 0 },
+      'mock-4': { status: 'pending', wordCount: 0 },
+    });
+    
+    try {
+      const response = await fetch(`/api/projects/${projectId}/demo-stream`, {
+        method: 'POST',
+      });
+      
+      if (!response.body) {
+        throw new Error('No response body');
+      }
+      
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      
+      while (true) {
+        const { done, value } = await reader.read();
+        
+        if (done) break;
+        
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              
+              switch (data.type) {
+                case 'section_started':
+                  setSectionProgress(prev => ({
+                    ...prev,
+                    [data.data.sectionId]: { status: 'writing', wordCount: 0 }
+                  }));
+                  setCurrentSectionId(data.data.sectionId);
+                  break;
+                  
+                case 'content_chunk':
+                  setDemoContent(prev => ({
+                    ...prev,
+                    [data.data.sectionId]: data.data.fullContent
+                  }));
+                  break;
+                  
+                case 'section_complete':
+                  setSectionProgress(prev => ({
+                    ...prev,
+                    [data.data.sectionId]: { status: 'completed', wordCount: data.data.wordCount }
+                  }));
+                  setGeneratedContent(prev => ({
+                    ...prev,
+                    [data.data.sectionId]: data.data.content
+                  }));
+                  break;
+                  
+                case 'generation_complete':
+                  console.log('Demo generation completed!');
+                  break;
+                  
+                case 'error':
+                  console.error('Demo error:', data.data.error);
+                  break;
+              }
+            } catch (parseError) {
+              console.error('Failed to parse demo data:', parseError);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Demo generation failed:', error);
+    } finally {
+      setIsDemoRunning(false);
+    }
+  };
   
   const handleSectionComplete = (sectionId: string, content: string) => {
     setSectionProgress(prev => ({
@@ -235,6 +324,29 @@ function LiveWriterContent({ projectId, onComplete, onError }: LiveWriterProps) 
         </div>
         
         <div className="flex items-center gap-2">
+          {/* Demo button for development */}
+          {process.env.NODE_ENV === 'development' && (
+            <Button
+              variant="default"
+              size="sm"
+              onClick={startDemoGeneration}
+              disabled={isDemoRunning}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              {isDemoRunning ? (
+                <>
+                  <Pause className="h-4 w-4 mr-1" />
+                  Demo Running...
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4 mr-1" />
+                  Demo Content Stream
+                </>
+              )}
+            </Button>
+          )}
+          
           <Button
             variant="outline"
             size="sm"
@@ -368,15 +480,41 @@ function LiveWriterContent({ projectId, onComplete, onError }: LiveWriterProps) 
           {/* Streaming Content Display */}
           <div className="flex-1 min-w-0">
             {getCurrentSection() ? (
-              <StreamingContentDisplay
-                projectId={projectId}
-                section={getCurrentSection()!}
-                previousContent={getPreviousContent()}
-                tone={progress.blueprint.seoMetadata?.focusKeyword ? 'professional' : 'professional'} // TODO: Get from project
-                targetKeywords={progress.blueprint.seoMetadata?.targetKeywords}
-                onComplete={handleSectionComplete}
-                onError={handleSectionError}
-              />
+              <div className="h-full">
+                {isDemoRunning && currentSectionId && demoContent[currentSectionId] ? (
+                  <Card className="h-full">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Zap className="h-5 w-5 text-blue-500 animate-pulse" />
+                        {getCurrentSection()?.heading}
+                        <Badge variant="secondary" className="animate-pulse">
+                          {sectionProgress[currentSectionId]?.status === 'writing' ? 'Writing...' : 'Completed'}
+                        </Badge>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="h-full overflow-auto">
+                      <div className="prose max-w-none">
+                        <div className="whitespace-pre-wrap font-mono text-sm leading-relaxed">
+                          {demoContent[currentSectionId]}
+                          {sectionProgress[currentSectionId]?.status === 'writing' && (
+                            <span className="inline-block w-2 h-5 bg-blue-500 animate-pulse ml-1"></span>
+                          )}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <StreamingContentDisplay
+                    projectId={projectId}
+                    section={getCurrentSection()!}
+                    previousContent={getPreviousContent()}
+                    tone={progress.blueprint.seoMetadata?.focusKeyword ? 'professional' : 'professional'} // TODO: Get from project
+                    targetKeywords={progress.blueprint.seoMetadata?.targetKeywords}
+                    onComplete={handleSectionComplete}
+                    onError={handleSectionError}
+                  />
+                )}
+              </div>
             ) : (
               <Card className="h-full flex items-center justify-center">
                 <CardContent>
@@ -384,6 +522,14 @@ function LiveWriterContent({ projectId, onComplete, onError }: LiveWriterProps) 
                     <Layout className="h-12 w-12 mx-auto mb-4" />
                     <h3 className="text-lg font-medium mb-2">Select a Section</h3>
                     <p>Choose a section from the blueprint to start writing</p>
+                    {process.env.NODE_ENV === 'development' && (
+                      <div className="mt-4">
+                        <Button onClick={startDemoGeneration} disabled={isDemoRunning}>
+                          <Play className="h-4 w-4 mr-2" />
+                          Try Demo Content Generation
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>

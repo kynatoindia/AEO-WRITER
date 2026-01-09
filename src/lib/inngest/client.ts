@@ -6,25 +6,6 @@ export const inngest = new Inngest({
   name: 'AEO Writer SaaS',
   eventKey: process.env.INNGEST_EVENT_KEY,
   isDev: process.env.NODE_ENV === 'development',
-  // Production configuration with enhanced retry and concurrency
-  retries: {
-    attempts: 5,
-    delay: '1s',
-    maxDelay: '30s',
-    backoff: 'exponential',
-  },
-  logger: {
-    level: process.env.NODE_ENV === 'production' ? 'warn' : 'info',
-  },
-  // Global middleware for error handling and monitoring
-  middleware: [
-    // Add request ID for tracing
-    async (ctx, next) => {
-      const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      ctx.event.data = { ...ctx.event.data, requestId };
-      return next();
-    },
-  ],
 });
 
 // Event types for type safety with enhanced event structure

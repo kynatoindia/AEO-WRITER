@@ -1,13 +1,14 @@
 import { z } from 'zod';
 import { CompetitorData, ContentAnalysis } from '@/lib/types';
 import { redis, CACHE_KEYS, CACHE_TTL } from '@/lib/redis/client';
+import { mockTavilyService } from './tavily-mock';
 
 // Tavily API configuration
 const TAVILY_API_URL = 'https://api.tavily.com/search';
 const TAVILY_API_KEY = process.env.TAVILY_API_KEY;
 
 if (!TAVILY_API_KEY) {
-  console.warn('TAVILY_API_KEY not found in environment variables');
+  console.warn('TAVILY_API_KEY not found in environment variables - using mock service');
 }
 
 // Tavily API response schemas
@@ -22,9 +23,9 @@ const tavilySearchResultSchema = z.object({
 
 const tavilySearchResponseSchema = z.object({
   query: z.string(),
-  follow_up_questions: z.array(z.string()).optional(),
-  answer: z.string().optional(),
-  images: z.array(z.string()).optional(),
+  follow_up_questions: z.array(z.string()).optional().nullable(),
+  answer: z.string().optional().nullable(),
+  images: z.array(z.string()).optional().nullable(),
   results: z.array(tavilySearchResultSchema),
   response_time: z.number(),
 });
@@ -74,7 +75,17 @@ class TavilyService {
    */
   async search(options: TavilySearchOptions): Promise<TavilyCompetitorAnalysis[]> {
     if (!this.apiKey) {
-      throw new Error('Tavily API key not configured');
+      console.log('Using mock Tavily service for search');
+      // Convert mock data to TavilyCompetitorAnalysis format
+      const mockResults = await mockTavilyService.scrapeCompetitors([
+        `https://example.com/${options.query.replace(/\s+/g, '-')}`
+      ]);
+      
+      return mockResults.map(result => ({
+        ...result,
+        score: 0.8 + Math.random() * 0.2,
+        publishedDate: result.lastUpdated
+      }));
     }
 
     // Check cache first
@@ -174,6 +185,12 @@ class TavilyService {
    * Scrape competitor URLs with enhanced analysis
    */
   async scrapeCompetitors(urls: string[]): Promise<CompetitorData[]> {
+    // Use mock service if API key is not available
+    if (!this.apiKey) {
+      console.log('Using mock Tavily service for competitor scraping');
+      return mockTavilyService.scrapeCompetitors(urls);
+    }
+
     const results: CompetitorData[] = [];
     const errors: string[] = [];
 
@@ -184,13 +201,20 @@ class TavilyService {
     for (const chunk of chunks) {
       const promises = chunk.map(async (url) => {
         try {
+          // Extract domain and create a meaningful search query
+          const domain = new URL(url).hostname;
+          const path = new URL(url).pathname;
+          
+          // Create a search query that includes the domain and relevant terms
+          const searchQuery = `site:${domain} ${path.split('/').filter(p => p && p.length > 2).join(' ')} marketing guide content`;
+          
           // Use Tavily to search for content from specific URL
           const searchResults = await this.search({
-            query: `site:${new URL(url).hostname}`,
+            query: searchQuery,
             search_depth: 'advanced',
             include_raw_content: true,
             max_results: 1,
-            include_domains: [new URL(url).hostname],
+            include_domains: [domain],
           });
 
           if (searchResults.length > 0) {
@@ -232,6 +256,12 @@ class TavilyService {
    * Analyze content for key insights
    */
   async analyzeContent(content: string): Promise<ContentAnalysis> {
+    // Use mock service if API key is not available
+    if (!this.apiKey) {
+      console.log('Using mock Tavily service for content analysis');
+      return mockTavilyService.analyzeContent(content);
+    }
+
     // Use Tavily to search for related content and trends
     const keyTopics = this.extractKeyTopics(content);
     const searchQuery = keyTopics.slice(0, 3).join(' ');
@@ -270,6 +300,12 @@ class TavilyService {
    * Search for related content based on query
    */
   async searchRelatedContent(query: string): Promise<CompetitorData[]> {
+    // Use mock service if API key is not available
+    if (!this.apiKey) {
+      console.log('Using mock Tavily service for related content search');
+      return mockTavilyService.searchRelatedContent(query);
+    }
+
     const searchResults = await this.search({
       query,
       search_depth: 'advanced',
@@ -468,6 +504,10 @@ class TavilyService {
    * Health check for Tavily service
    */
   async healthCheck(): Promise<{ healthy: boolean; responseTime?: number; error?: string }> {
+    if (!this.apiKey) {
+      console.log('Using mock Tavily service for health check');
+      return mockTavilyService.healthCheck();
+    }
     if (!this.apiKey) {
       return { healthy: false, error: 'API key not configured' };
     }

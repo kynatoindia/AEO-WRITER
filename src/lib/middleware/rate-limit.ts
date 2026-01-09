@@ -26,10 +26,38 @@ export async function withRateLimit(
 ) {
   const {
     windowSeconds = 60,
-    maxRequests = 10,
+    maxRequests = process.env.NODE_ENV === 'development' ? 100 : 10, // Much higher for dev
     endpoint,
     globalLimit,
   } = options;
+
+  // Skip rate limiting entirely for localhost in development
+  if (process.env.NODE_ENV === 'development') {
+    const host = request.headers.get('host');
+    if (host?.includes('localhost') || host?.includes('127.0.0.1')) {
+      console.log('Skipping rate limit for localhost in development');
+      
+      // Still get user for consistency
+      const supabase = await createRouteClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        return NextResponse.json(
+          { error: 'Authentication required' },
+          { status: 401 }
+        );
+      }
+
+      return {
+        user,
+        rateLimitHeaders: {
+          'X-RateLimit-Limit': '999999',
+          'X-RateLimit-Remaining': '999999',
+          'X-RateLimit-Reset': (Date.now() + 3600000).toString(),
+        },
+      };
+    }
+  }
 
   try {
     // Get user from session
@@ -235,8 +263,12 @@ export async function withPreRequestQuotaValidation(
     // Get user plan for dynamic rate limiting
     const userPlan = await getUserPlan(user.id);
     
-    // Apply stricter rate limits for free users
-    const rateLimits = {
+    // Apply stricter rate limits for free users (but lenient in development)
+    const rateLimits = process.env.NODE_ENV === 'development' ? {
+      free: { windowSeconds: 60, maxRequests: 100 },
+      pro: { windowSeconds: 60, maxRequests: 200 },
+      enterprise: { windowSeconds: 60, maxRequests: 500 },
+    } : {
       free: { windowSeconds: 60, maxRequests: 5 },
       pro: { windowSeconds: 60, maxRequests: 20 },
       enterprise: { windowSeconds: 60, maxRequests: 100 },

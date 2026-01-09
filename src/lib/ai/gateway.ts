@@ -6,7 +6,7 @@ import { z } from 'zod';
 
 // AI Provider configuration with cost optimization
 export type AIProvider = 'openai' | 'google';
-export type AIModel = 'gpt-4o' | 'gpt-4o-mini' | 'gemini-1.5-pro' | 'gemini-1.5-flash';
+export type AIModel = 'gpt-4o' | 'gpt-4o-mini' | 'gemini-1.5-pro' | 'gemini-1.5-flash' | 'gemini-3-flash-preview';
 
 export interface AIConfig {
   provider: AIProvider;
@@ -20,15 +20,15 @@ export interface AIConfig {
 
 // Enhanced model configurations with latest pricing and capabilities
 export const AI_MODELS: Record<AIModel, AIConfig> = {
-  // OpenAI models - Production ready
+  // OpenAI models - DISABLED
   'gpt-4o': {
     provider: 'openai',
     model: 'gpt-4o',
     maxTokens: 4000,
     temperature: 0.7,
     costPerToken: 0.015, // $15 per 1M tokens (input)
-    priority: 2,
-    enabled: true,
+    priority: 10, // Low priority
+    enabled: false, // DISABLED
   },
   'gpt-4o-mini': {
     provider: 'openai',
@@ -36,19 +36,19 @@ export const AI_MODELS: Record<AIModel, AIConfig> = {
     maxTokens: 2000,
     temperature: 0.7,
     costPerToken: 0.00015, // $0.15 per 1M tokens (input)
-    priority: 1, // Preferred for cost efficiency
-    enabled: true,
+    priority: 10, // Low priority
+    enabled: false, // DISABLED
   },
   
-  // Google models - Testing and fallback
+  // Google models - PRIMARY PROVIDERS
   'gemini-1.5-pro': {
     provider: 'google',
     model: 'gemini-1.5-pro',
     maxTokens: 4000,
     temperature: 0.7,
     costPerToken: 0.0035, // $3.50 per 1M tokens
-    priority: 3,
-    enabled: process.env.GOOGLE_AI_API_KEY ? true : false,
+    priority: 2, // MEDIUM PRIORITY
+    enabled: !!(process.env.GOOGLE_AI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY),
   },
   'gemini-1.5-flash': {
     provider: 'google',
@@ -56,18 +56,27 @@ export const AI_MODELS: Record<AIModel, AIConfig> = {
     maxTokens: 2000,
     temperature: 0.7,
     costPerToken: 0.00035, // $0.35 per 1M tokens
-    priority: 1, // Very cost effective
-    enabled: process.env.GOOGLE_AI_API_KEY ? true : false,
+    priority: 3, // LOWER PRIORITY
+    enabled: !!(process.env.GOOGLE_AI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY),
+  },
+  'gemini-3-flash-preview': {
+    provider: 'google',
+    model: 'gemini-3-flash-preview',
+    maxTokens: 8000,
+    temperature: 0.7,
+    costPerToken: 0.0002, // Estimated cost for new model
+    priority: 1, // HIGHEST PRIORITY - Latest model
+    enabled: !!(process.env.GOOGLE_AI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY),
   },
 };
 
-// Use case specific model selection with fallbacks
+// Use case specific model selection with fallbacks - ALL GEMINI
 export const USE_CASE_MODELS = {
-  research: ['gpt-4o', 'gemini-1.5-pro'], // High quality for research
-  blueprint: ['gpt-4o', 'gemini-1.5-pro'], // High quality for strategy
-  content: ['gpt-4o-mini', 'gemini-1.5-flash'], // Cost effective for content
-  polish: ['gpt-4o-mini', 'gemini-1.5-flash'], // Cost effective for polishing
-  structured: ['gpt-4o', 'gpt-4o-mini'], // OpenAI better for structured output
+  research: ['gemini-3-flash-preview', 'gemini-1.5-pro', 'gemini-1.5-flash'], // Latest model first
+  blueprint: ['gemini-3-flash-preview', 'gemini-1.5-pro', 'gemini-1.5-flash'], // Latest model first
+  content: ['gemini-3-flash-preview', 'gemini-1.5-flash', 'gemini-1.5-pro'], // Latest model first
+  polish: ['gemini-3-flash-preview', 'gemini-1.5-flash', 'gemini-1.5-pro'], // Latest model first
+  structured: ['gemini-3-flash-preview', 'gemini-1.5-pro', 'gemini-1.5-flash'], // Latest model first
 } as const;
 
 // Provider health tracking with enhanced metrics
@@ -122,7 +131,7 @@ class AIProviderManager {
     });
     
     this.providerHealth.set('google', {
-      healthy: process.env.GOOGLE_AI_API_KEY ? true : false,
+      healthy: !!(process.env.GOOGLE_AI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY),
       lastCheck: Date.now(),
       errorCount: 0,
       avgResponseTime: 0,
@@ -157,7 +166,7 @@ class AIProviderManager {
         const testPrompt = "Respond with 'OK'";
         const config = provider === 'openai' 
           ? AI_MODELS['gpt-4o-mini'] 
-          : AI_MODELS['gemini-1.5-flash'];
+          : AI_MODELS['gemini-3-flash-preview']; // Use the new model
         
         if (!config.enabled) continue;
         
@@ -429,11 +438,11 @@ export async function generateAIText(
       let retryCount = 0;
       
       while (retryCount < providerManager['maxRetries']) {
+        const start = Date.now(); // Move start declaration outside try block
         try {
           const modelConfig = { ...AI_MODELS[model], ...options };
           const modelInstance = providerManager['getModel'](modelConfig);
           
-          const start = Date.now();
           const result = await generateText({
             model: modelInstance,
             prompt,

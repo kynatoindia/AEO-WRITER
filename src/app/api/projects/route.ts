@@ -387,21 +387,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<APIRespon
         format: validationResult.data.format as any,
         brand_document_path: brandDocumentPath,
         status: 'draft',
-        // Store security metadata
-        security_metadata: virusScanResult ? {
-          virusScan: {
-            scanId: virusScanResult.scanId,
-            timestamp: virusScanResult.timestamp,
-            isClean: virusScanResult.isClean,
-          },
-          fileValidation: {
-            originalName: brandDocumentFile?.name,
-            validatedType: brandDocumentFile?.type,
-            size: brandDocumentFile?.size,
-          },
-        } : null,
       })
-      .select()
+      .select('id, user_id, topic, competitor_urls, tone, format, brand_document_path, status, created_at, updated_at')
       .single();
 
     if (dbError) {
@@ -569,7 +556,7 @@ export async function GET(request: NextRequest): Promise<NextResponse<APIRespons
     // Build base query
     let query = supabase
       .from('projects')
-      .select('*')
+      .select('id, user_id, topic, competitor_urls, tone, format, brand_document_path, status, created_at, updated_at')
       .eq('user_id', user.id);
 
     // Apply filters
@@ -595,7 +582,7 @@ export async function GET(request: NextRequest): Promise<NextResponse<APIRespons
     // Get total count before pagination
     const { count: totalCount } = await supabase
       .from('projects')
-      .select('*', { count: 'exact', head: true })
+      .select('id', { count: 'exact', head: true })
       .eq('user_id', user.id);
 
     // Apply sorting and pagination

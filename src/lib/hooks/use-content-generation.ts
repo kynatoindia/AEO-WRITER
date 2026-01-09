@@ -54,7 +54,7 @@ export function useContentGeneration({
     realtimeEvents: []
   });
   
-  const supabase = createClient();
+  const supabase = createClientSupabaseClient();
   
   // Fetch current progress from API
   const fetchProgress = useCallback(async () => {

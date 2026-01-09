@@ -256,7 +256,7 @@ export const researchPipelineWorkflow = inngest.createFunction(
         const aiResponse = await generateAIText(analysisPrompt, 'research', userId);
         
         // Parse AI response into structured format
-        const structuredAnalysis = await this.parseResearchAnalysis(aiResponse.text, competitorData, brandAnalysis);
+        const structuredAnalysis = await parseResearchAnalysis(aiResponse.text, competitorData, brandAnalysis);
         
         // Send progress update
         await inngest.send({
@@ -280,7 +280,7 @@ export const researchPipelineWorkflow = inngest.createFunction(
         
         // Generate fallback analysis
         return {
-          analysis: this.generateFallbackAnalysis(competitorData, brandAnalysis, topic),
+          analysis: generateFallbackAnalysis(competitorData, brandAnalysis, topic),
           tokensUsed: 0,
           cost: 0,
         };
