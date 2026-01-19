@@ -501,6 +501,37 @@ class TavilyService {
   }
 
   /**
+   * Search for competitors using AI-powered discovery
+   */
+  async searchCompetitors(
+    query: string,
+    options: {
+      maxResults?: number;
+      includeDomains?: string[];
+      excludeDomains?: string[];
+      searchDepth?: 'basic' | 'advanced';
+    } = {}
+  ): Promise<TavilyCompetitorAnalysis[]> {
+    const searchOptions: TavilySearchOptions = {
+      query,
+      search_depth: options.searchDepth || 'advanced',
+      include_raw_content: true,
+      max_results: options.maxResults || 10,
+      include_domains: options.includeDomains,
+      exclude_domains: options.excludeDomains || [
+        'wikipedia.org',
+        'reddit.com',
+        'quora.com',
+        'facebook.com',
+        'twitter.com',
+        'linkedin.com'
+      ],
+    };
+
+    return this.search(searchOptions);
+  }
+
+  /**
    * Health check for Tavily service
    */
   async healthCheck(): Promise<{ healthy: boolean; responseTime?: number; error?: string }> {

@@ -43,10 +43,17 @@ const BlueprintSchema = z.object({
 export const generateContentStrategy = inngest.createFunction(
   {
     id: 'generate-content-strategy',
-    concurrency: {
-      limit: CONCURRENCY_LIMITS['project/content-generation-started'],
-      key: 'event.data.userId',
-    },
+    concurrency: [
+      {
+        limit: CONCURRENCY_LIMITS['project/content-generation-started'],
+        key: 'event.data.userId',
+      },
+      {
+        limit: 1,
+        scope: "account",
+        key: '"gemini-quota-limit"', // Global Gemini quota limit protection
+      }
+    ],
     retries: RETRY_CONFIG['ai-request'].attempts,
   },
   { event: 'content/strategy-generate' },
@@ -169,8 +176,6 @@ export const generateContentStrategy = inngest.createFunction(
             status: 'writing'
           }
         });
-    }, {
-      retries: RETRY_CONFIG['database-operation'].attempts,
     });
     
     // Fan-out: Trigger parallel content generation for each section
@@ -214,10 +219,17 @@ export const generateContentStrategy = inngest.createFunction(
 export const generateContentSection = inngest.createFunction(
   {
     id: 'generate-content-section',
-    concurrency: {
-      limit: CONCURRENCY_LIMITS['content/generate'],
-      key: 'event.data.projectId', // Limit per project to manage costs
-    },
+    concurrency: [
+      {
+        limit: CONCURRENCY_LIMITS['content/generate'],
+        key: 'event.data.projectId', // Limit per project to manage costs
+      },
+      {
+        limit: 1,
+        scope: "account",
+        key: '"gemini-quota-limit"', // Global Gemini quota limit protection
+      }
+    ],
     retries: RETRY_CONFIG['ai-request'].attempts,
   },
   { event: 'content/section-generate' },
@@ -323,8 +335,6 @@ export const generateContentSection = inngest.createFunction(
       );
       
       return result.text;
-    }, {
-      retries: RETRY_CONFIG['ai-request'].attempts,
     });
     
     // Store generated content and update section status
@@ -359,8 +369,6 @@ export const generateContentSection = inngest.createFunction(
             wordCount: sectionContent.split(' ').length
           }
         });
-    }, {
-      retries: RETRY_CONFIG['database-operation'].attempts,
     });
     
     // Check if all sections are complete and trigger finalization
@@ -415,10 +423,17 @@ export const generateContentSection = inngest.createFunction(
 export const assembleAndPolishContent = inngest.createFunction(
   {
     id: 'assemble-and-polish-content',
-    concurrency: {
-      limit: 1, // Sequential processing for final assembly
-      key: 'event.data.projectId',
-    },
+    concurrency: [
+      {
+        limit: 1, // Sequential processing for final assembly
+        key: 'event.data.projectId',
+      },
+      {
+        limit: 1,
+        scope: "account",
+        key: '"gemini-quota-limit"', // Global Gemini quota limit protection
+      }
+    ],
     retries: RETRY_CONFIG['ai-request'].attempts,
   },
   { event: 'content/final-assembly' },
@@ -496,8 +511,6 @@ export const assembleAndPolishContent = inngest.createFunction(
       );
       
       return result.text;
-    }, {
-      retries: RETRY_CONFIG['ai-request'].attempts,
     });
     
     // Generate final SEO metadata
@@ -567,8 +580,6 @@ export const assembleAndPolishContent = inngest.createFunction(
             seoMetadata: finalSEOMetadata
           }
         });
-    }, {
-      retries: RETRY_CONFIG['database-operation'].attempts,
     });
     
     const result = {

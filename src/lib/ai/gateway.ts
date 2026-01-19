@@ -3,10 +3,11 @@ import { google } from '@ai-sdk/google';
 import { generateText, streamText, generateObject, streamObject } from 'ai';
 import { redis, CACHE_KEYS, CACHE_TTL } from '@/lib/redis/client';
 import { z } from 'zod';
+import { NonRetriableError } from 'inngest';
 
 // AI Provider configuration with cost optimization
 export type AIProvider = 'openai' | 'google';
-export type AIModel = 'gpt-4o' | 'gpt-4o-mini' | 'gemini-1.5-pro' | 'gemini-1.5-flash' | 'gemini-3-flash-preview';
+export type AIModel = 'gpt-4o' | 'gpt-4o-mini' | 'gemini-2.5-pro' | 'gemini-2.0-flash' | 'gemini-3-flash-preview';
 
 export interface AIConfig {
   provider: AIProvider;
@@ -41,18 +42,18 @@ export const AI_MODELS: Record<AIModel, AIConfig> = {
   },
   
   // Google models - PRIMARY PROVIDERS
-  'gemini-1.5-pro': {
+  'gemini-2.5-pro': {
     provider: 'google',
-    model: 'gemini-1.5-pro',
+    model: 'gemini-2.5-pro',
     maxTokens: 4000,
     temperature: 0.7,
     costPerToken: 0.0035, // $3.50 per 1M tokens
     priority: 2, // MEDIUM PRIORITY
     enabled: !!(process.env.GOOGLE_AI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY),
   },
-  'gemini-1.5-flash': {
+  'gemini-2.0-flash': {
     provider: 'google',
-    model: 'gemini-1.5-flash',
+    model: 'gemini-2.0-flash',
     maxTokens: 2000,
     temperature: 0.7,
     costPerToken: 0.00035, // $0.35 per 1M tokens
@@ -72,11 +73,11 @@ export const AI_MODELS: Record<AIModel, AIConfig> = {
 
 // Use case specific model selection with fallbacks - ALL GEMINI
 export const USE_CASE_MODELS = {
-  research: ['gemini-3-flash-preview', 'gemini-1.5-pro', 'gemini-1.5-flash'], // Latest model first
-  blueprint: ['gemini-3-flash-preview', 'gemini-1.5-pro', 'gemini-1.5-flash'], // Latest model first
-  content: ['gemini-3-flash-preview', 'gemini-1.5-flash', 'gemini-1.5-pro'], // Latest model first
-  polish: ['gemini-3-flash-preview', 'gemini-1.5-flash', 'gemini-1.5-pro'], // Latest model first
-  structured: ['gemini-3-flash-preview', 'gemini-1.5-pro', 'gemini-1.5-flash'], // Latest model first
+  research: ['gemini-3-flash-preview', 'gemini-2.5-pro', 'gemini-2.0-flash'], // Latest model first
+  blueprint: ['gemini-3-flash-preview', 'gemini-2.5-pro', 'gemini-2.0-flash'], // Latest model first
+  content: ['gemini-3-flash-preview', 'gemini-2.0-flash', 'gemini-2.5-pro'], // Latest model first
+  polish: ['gemini-3-flash-preview', 'gemini-2.0-flash', 'gemini-2.5-pro'], // Latest model first
+  structured: ['gemini-3-flash-preview', 'gemini-2.5-pro', 'gemini-2.0-flash'], // Latest model first
 } as const;
 
 // Provider health tracking with enhanced metrics
@@ -490,12 +491,17 @@ export async function generateAIText(
           
           return response;
           
-        } catch (error) {
+        } catch (error: any) {
           const responseTime = Date.now() - start;
           await providerManager.recordUsage(provider, false, responseTime);
           
           console.error(`AI provider ${provider} model ${model} attempt ${retryCount + 1} failed:`, error);
           errors.push(error as Error);
+          
+          // CIRCUIT BREAKER: Stop retries for 404 errors immediately
+          if (error.statusCode === 404 || error.message.includes("not found")) {
+            throw new NonRetriableError("Permanent API/Model mismatch. Stopping retries.", { cause: error });
+          }
           
           // Check if it's a rate limit error
           if (error instanceof Error && error.message.includes('rate limit')) {

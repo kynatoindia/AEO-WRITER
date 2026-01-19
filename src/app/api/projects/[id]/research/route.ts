@@ -69,27 +69,36 @@ export async function POST(
       }, { status: 400 });
     }
 
-    // Trigger research pipeline workflow
+    // Trigger modular research pipeline workflow (AI competitor discovery)
     const eventData = {
       userId: user.id,
       projectId,
-      competitorUrls: validatedData.competitorUrls,
-      brandDocumentPath: validatedData.brandDocument,
       topic: project.topic,
       tone: project.tone,
       format: project.format,
+      brandDocumentPath: validatedData.brandDocument,
     };
 
-    console.log(`Triggering research pipeline for project ${projectId}`);
+    console.log(`Triggering AI-powered research pipeline for project ${projectId}`);
     
     // Try to send Inngest event, but don't fail if Inngest is not available
     let eventResult;
     try {
+      // Always use modular research pipeline with AI competitor discovery
       eventResult = await inngest.send({
-        name: 'project/research-started',
-        data: eventData,
+        name: 'project/modular-research-started',
+        data: {
+          userId: user.id,
+          projectId,
+          topic: project.topic,
+          tone: project.tone,
+          format: project.format,
+          industry: 'general', // Could be extracted from project data in the future
+          targetAudience: 'general', // Could be extracted from project data in the future
+          brandDocumentPath: validatedData.brandDocument,
+        },
       });
-      console.log('Inngest event sent successfully:', eventResult.ids[0]);
+      console.log('Modular research pipeline event sent successfully:', eventResult.ids[0]);
     } catch (inngestError) {
       console.error('Inngest event failed (non-blocking):', inngestError);
       // Continue without Inngest - we'll just update the status
@@ -115,10 +124,11 @@ export async function POST(
       data: {
         projectId,
         status: 'researching',
-        message: 'Research pipeline started successfully',
+        message: 'AI-powered research pipeline started successfully',
         eventId: eventResult.ids[0],
-        estimatedCompletionTime: '2-5 minutes',
-        competitorCount: validatedData.competitorUrls.length,
+        estimatedCompletionTime: '3-5 minutes',
+        aiCompetitorDiscovery: true,
+        strategicIntelligenceLoop: true,
         hasBrandDocument: !!validatedData.brandDocument,
       },
       timestamp: new Date().toISOString(),

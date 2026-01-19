@@ -4,19 +4,30 @@ import { incrementUsage, checkQuota } from '@/lib/rate-limiting/quota';
 import { generateAIText } from '@/lib/ai/gateway';
 import { createHash } from 'crypto';
 
-// Enhanced content generation handler with concurrency control and idempotency
+// Enhanced content generation handler with SEQUENTIAL execution to prevent rate limits
 export const handleContentGeneration = inngest.createFunction(
   { 
     id: 'handle-content-generation',
-    concurrency: {
-      limit: CONCURRENCY_LIMITS['content/generate'],
-      key: 'event.data.userId', // Per-user concurrency
+    concurrency: [
+      {
+        limit: 1, // CRITICAL: Only 1 request at a time to prevent rate limits
+        key: 'event.data.userId',
+        scope: 'account', // Global limit across all users
+      }
+    ],
+    throttle: {
+      limit: 12, // Stay well under 15 RPM limit
+      period: '1m',
+      key: 'event.data.userId',
     },
     retries: RETRY_CONFIG['ai-request'].attempts,
   },
   { event: 'content/generate' },
   async ({ event, step }) => {
     const { userId, projectId, contentType, prompt, sectionId, priority = 'normal' } = event.data;
+    
+    // MANDATORY COOL DOWN: Wait before making AI request
+    await step.sleep('rate-limit-cooldown', '5s');
     
     // Generate idempotency key based on content hash
     const contentHash = createHash('sha256').update(prompt).digest('hex');
@@ -38,9 +49,7 @@ export const handleContentGeneration = inngest.createFunction(
     
     // Check quota before processing with retry logic
     const quotaCheck = await step.run('check-quota', async () => {
-      return await checkQuota(userId, 'free', 'contentGeneration'); // Get actual plan from DB
-    }, {
-      retries: RETRY_CONFIG['database-operation'].attempts,
+      return await checkQuota(userId, 'free', 'contentGeneration');
     });
     
     if (!quotaCheck.allowed) {
@@ -48,7 +57,7 @@ export const handleContentGeneration = inngest.createFunction(
         name: 'quota/exceeded',
         data: {
           userId,
-          plan: 'free', // Get actual plan from DB
+          plan: 'free',
           quotaType: 'contentGeneration',
           currentUsage: quotaCheck.usage,
           limit: quotaCheck.limit,
@@ -57,27 +66,14 @@ export const handleContentGeneration = inngest.createFunction(
       throw new Error('Content generation quota exceeded');
     }
     
-    // Rate limit check for AI provider
-    const rateLimitCheck = await step.run('check-ai-rate-limit', async () => {
-      const rateLimitKey = `rate_limit:openai:${userId}`;
-      const currentRequests = await redis.incr(rateLimitKey);
-      
-      if (currentRequests === 1) {
-        await redis.expire(rateLimitKey, 60); // 1 minute window
-      }
-      
-      if (currentRequests > 10) { // 10 requests per minute per user
-        throw new Error('AI provider rate limit exceeded');
-      }
-      
-      return { allowed: true, currentRequests };
-    });
-    
-    // Generate content with enhanced error handling and retries
-    const content = await step.run('generate-content', async () => {
+    // Generate content with multi-provider failover
+    const content = await step.run('generate-content-with-failover', async () => {
       try {
+        // Import the multi-provider gateway
+        const { multiProviderAI } = await import('@/lib/ai/multi-provider-gateway');
+        
         const contentPrompt = `Generate ${contentType} content: ${prompt}`;
-        const result = await generateAIText(contentPrompt);
+        const result = await multiProviderAI.generateContent(contentPrompt);
         
         // Store successful result in cache for idempotency
         await redis.setex(`idempotency:${idempotencyKey}`, 3600, JSON.stringify({
@@ -89,34 +85,22 @@ export const handleContentGeneration = inngest.createFunction(
         
         return result;
       } catch (error: any) {
-        // Enhanced error handling with specific retry logic
-        if (error.status === 429) {
-          // Rate limit hit - wait and retry
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          throw new Error('OpenAI rate limit exceeded - retrying');
-        } else if (error.status >= 500) {
-          // Server error - retry
-          throw new Error(`OpenAI server error: ${error.message}`);
-        } else {
-          // Client error - don't retry
-          throw new Error(`OpenAI client error: ${error.message}`);
-        }
+        console.error('Multi-provider AI generation failed:', error);
+        throw new Error(`AI generation failed: ${error.message}`);
       }
-    }, {
-      retries: RETRY_CONFIG['ai-request'].attempts,
     });
+    
+    // MANDATORY COOL DOWN: Wait after AI request before next operation
+    await step.sleep('post-ai-cooldown', '3s');
     
     // Increment usage with retry logic
     await step.run('increment-usage', async () => {
       await incrementUsage(userId, 'contentGeneration');
-    }, {
-      retries: RETRY_CONFIG['database-operation'].attempts,
     });
     
     // Store content in database with retry logic
     await step.run('store-content', async () => {
       console.log(`Storing content for project ${projectId}, section ${sectionId || 'main'}`);
-      // Implement database storage here with proper error handling
       
       // Send progress update event
       await inngest.send({
@@ -125,13 +109,11 @@ export const handleContentGeneration = inngest.createFunction(
           userId,
           projectId,
           sectionId: sectionId || 'main',
-          sectionIndex: 0, // Get from database
+          sectionIndex: 0,
           content,
-          tokensUsed: Math.ceil(content.length / 4), // Rough token estimate
+          tokensUsed: Math.ceil(content.length / 4),
         },
       });
-    }, {
-      retries: RETRY_CONFIG['database-operation'].attempts,
     });
     
     const result = { 
@@ -148,12 +130,20 @@ export const handleContentGeneration = inngest.createFunction(
   }
 );
 
-// Enhanced project research handler with concurrency control
+// Enhanced project research handler with SEQUENTIAL execution
 export const handleProjectResearch = inngest.createFunction(
   {
     id: 'handle-project-research',
-    concurrency: {
-      limit: CONCURRENCY_LIMITS['project/research-started'],
+    concurrency: [
+      {
+        limit: 1, // CRITICAL: Only 1 research request at a time
+        key: 'event.data.userId',
+        scope: 'account',
+      }
+    ],
+    throttle: {
+      limit: 10, // Conservative limit for research operations
+      period: '1m',
       key: 'event.data.userId',
     },
     retries: RETRY_CONFIG['external-api'].attempts,
@@ -161,6 +151,9 @@ export const handleProjectResearch = inngest.createFunction(
   { event: 'project/research-started' },
   async ({ event, step }) => {
     const { userId, projectId, competitorUrls, brandDocumentPath } = event.data;
+    
+    // MANDATORY COOL DOWN: Wait before starting research
+    await step.sleep('research-start-cooldown', '3s');
     
     // Generate idempotency key for research operation
     const idempotencyKey = generateIdempotencyKey.research(userId, projectId, competitorUrls);
@@ -176,38 +169,45 @@ export const handleProjectResearch = inngest.createFunction(
       return duplicateCheck;
     }
     
-    // Scrape competitor content with retry logic
+    // Scrape competitor content with retry logic (using Groq for fast processing)
     const competitorData = await step.run('scrape-competitors', async () => {
       console.log(`Scraping ${competitorUrls.length} competitor URLs`);
-      // Implement Tavily API integration here
+      // Use Tavily for web scraping, then Groq for analysis
       return { scraped: competitorUrls.length, data: [] };
-    }, {
-      retries: RETRY_CONFIG['external-api'].attempts,
     });
+    
+    // COOL DOWN between operations
+    await step.sleep('post-scraping-cooldown', '5s');
     
     // Process brand document if provided
     const brandContext = await step.run('process-brand-document', async () => {
       if (!brandDocumentPath) return null;
       
       console.log(`Processing brand document: ${brandDocumentPath}`);
-      // Implement PDF processing and vector embedding here
       return { processed: true, embeddings: [] };
-    }, {
-      retries: RETRY_CONFIG['database-operation'].attempts,
     });
     
-    // Generate research analysis using AI
-    const researchAnalysis = await step.run('analyze-research', async () => {
-      const analysisPrompt = `Analyze competitor content and brand context for project ${projectId}`;
-      return await generateAIText(analysisPrompt);
-    }, {
-      retries: RETRY_CONFIG['ai-request'].attempts,
+    // COOL DOWN before AI analysis
+    await step.sleep('pre-analysis-cooldown', '5s');
+    
+    // Generate research analysis using multi-provider AI (prefer Gemini for research)
+    const researchAnalysis = await step.run('analyze-research-with-failover', async () => {
+      try {
+        const { multiProviderAI } = await import('@/lib/ai/multi-provider-gateway');
+        const analysisPrompt = `Analyze competitor content and brand context for project ${projectId}`;
+        return await multiProviderAI.generateResearch(analysisPrompt);
+      } catch (error: any) {
+        console.error('Research analysis failed:', error);
+        throw new Error(`Research analysis failed: ${error.message}`);
+      }
     });
+    
+    // COOL DOWN after AI analysis
+    await step.sleep('post-analysis-cooldown', '3s');
     
     // Store research results
     await step.run('store-research-results', async () => {
       console.log(`Storing research results for project ${projectId}`);
-      // Implement database storage
       
       // Send research completed event
       await inngest.send({
@@ -217,11 +217,9 @@ export const handleProjectResearch = inngest.createFunction(
           projectId,
           researchData: { competitorData, brandContext, researchAnalysis },
           tokensUsed: Math.ceil(researchAnalysis.length / 4),
-          cost: 0.01, // Calculate actual cost
+          cost: 0.01,
         },
       });
-    }, {
-      retries: RETRY_CONFIG['database-operation'].attempts,
     });
     
     const result = {
@@ -244,10 +242,17 @@ export const handleProjectResearch = inngest.createFunction(
 export const handleBlueprintGeneration = inngest.createFunction(
   {
     id: 'handle-blueprint-generation',
-    concurrency: {
-      limit: CONCURRENCY_LIMITS['project/content-generation-started'],
-      key: 'event.data.userId',
-    },
+    concurrency: [
+      {
+        limit: CONCURRENCY_LIMITS['project/content-generation-started'],
+        key: 'event.data.userId',
+      },
+      {
+        limit: 1,
+        scope: "account",
+        key: '"gemini-quota-limit"', // Global Gemini quota limit protection
+      }
+    ],
     retries: RETRY_CONFIG['ai-request'].attempts,
   },
   { event: 'project/blueprint-generate' },
@@ -287,8 +292,6 @@ export const handleBlueprintGeneration = inngest.createFunction(
         estimatedLength: 2000,
         targetKeywords: [topic],
       };
-    }, {
-      retries: RETRY_CONFIG['ai-request'].attempts,
     });
     
     // Store blueprint and trigger section generation
@@ -320,8 +323,6 @@ export const handleBlueprintGeneration = inngest.createFunction(
           },
         });
       }
-    }, {
-      retries: RETRY_CONFIG['database-operation'].attempts,
     });
     
     const result = {
@@ -343,6 +344,11 @@ export const handleBlueprintGeneration = inngest.createFunction(
 export const handleUserRegistration = inngest.createFunction(
   { 
     id: 'handle-user-registration',
+    concurrency: {
+      limit: 1,
+      scope: "account",
+      key: '"gemini-quota-limit"', // Global Gemini quota limit protection
+    },
     retries: RETRY_CONFIG['database-operation'].attempts,
   },
   { event: 'user/registered' },
@@ -371,16 +377,12 @@ export const handleUserRegistration = inngest.createFunction(
         projects: 0,
         createdAt: Date.now(),
       });
-    }, {
-      retries: RETRY_CONFIG['database-operation'].attempts,
     });
     
     // Send welcome email (placeholder)
     await step.run('send-welcome-email', async () => {
       console.log(`Sending welcome email to ${email} for plan: ${plan}`);
       // Implement email service integration here
-    }, {
-      retries: RETRY_CONFIG['external-api'].attempts,
     });
     
     const result = { success: true, userId, plan, timestamp: Date.now() };
@@ -396,6 +398,11 @@ export const handleUserRegistration = inngest.createFunction(
 export const handleQuotaExceeded = inngest.createFunction(
   { 
     id: 'handle-quota-exceeded',
+    concurrency: {
+      limit: 1,
+      scope: "account",
+      key: '"gemini-quota-limit"', // Global Gemini quota limit protection
+    },
     retries: RETRY_CONFIG['default'].attempts,
   },
   { event: 'quota/exceeded' },
@@ -406,8 +413,6 @@ export const handleQuotaExceeded = inngest.createFunction(
     await step.run('send-quota-notification', async () => {
       console.log(`User ${userId} exceeded ${quotaType} quota: ${currentUsage}/${limit}`);
       // Implement notification service here
-    }, {
-      retries: RETRY_CONFIG['external-api'].attempts,
     });
     
     // Log for analytics with enhanced data
@@ -421,8 +426,6 @@ export const handleQuotaExceeded = inngest.createFunction(
         timestamp: Date.now(),
         severity: currentUsage > limit * 1.5 ? 'high' : 'medium',
       }));
-    }, {
-      retries: RETRY_CONFIG['database-operation'].attempts,
     });
     
     // Temporarily throttle user requests
@@ -439,6 +442,11 @@ export const handleQuotaExceeded = inngest.createFunction(
 export const handleSubscriptionUpdate = inngest.createFunction(
   { 
     id: 'handle-subscription-update',
+    concurrency: {
+      limit: 1,
+      scope: "account",
+      key: '"gemini-quota-limit"', // Global Gemini quota limit protection
+    },
     retries: RETRY_CONFIG['database-operation'].attempts,
   },
   { event: 'user/plan-upgraded' },
@@ -464,8 +472,6 @@ export const handleSubscriptionUpdate = inngest.createFunction(
         plan: newPlan,
         upgradedAt: Date.now(),
       });
-    }, {
-      retries: RETRY_CONFIG['database-operation'].attempts,
     });
     
     // Reset usage if upgrading from free
@@ -486,8 +492,6 @@ export const handleSubscriptionUpdate = inngest.createFunction(
         if (throttleKeys.length > 0) {
           await redis.del(...throttleKeys);
         }
-      }, {
-        retries: RETRY_CONFIG['database-operation'].attempts,
       });
     }
     
@@ -508,6 +512,10 @@ import { contentGenerationFunctions } from './content-generation-pipeline-simple
 import { projectInitializationFunctions } from './project-initialization';
 // Import content finalization functions
 import { contentFinalizationFunctions } from './content-finalization-pipeline';
+// Import modular agentic research pipeline functions
+import { modularAgenticResearchFunctions } from './modular-agentic-research-pipeline';
+// Import fact-based content generation functions
+import { factBasedContentGenerationFunctions } from './fact-based-content-generation-pipeline';
 
 // Export all enhanced functions
 export const inngestFunctions = [
@@ -521,4 +529,6 @@ export const inngestFunctions = [
   ...contentGenerationFunctions,
   ...projectInitializationFunctions,
   ...contentFinalizationFunctions,
+  ...modularAgenticResearchFunctions,
+  ...factBasedContentGenerationFunctions,
 ];

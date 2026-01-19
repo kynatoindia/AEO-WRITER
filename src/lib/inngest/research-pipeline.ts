@@ -4,6 +4,8 @@ import { tavilyService } from '@/lib/services/tavily';
 import { pdfProcessor } from '@/lib/services/pdf-processor';
 import { generateAIText, generateStructuredOutput } from '@/lib/ai/gateway';
 import { createClient } from '@supabase/supabase-js';
+import { updateProjectStatus, statusHelpers } from '@/lib/utils/project-status';
+import { NonRetriableError } from 'inngest';
 import { z } from 'zod';
 
 // Supabase client for database operations
@@ -22,7 +24,7 @@ const researchResultSchema = z.object({
     wordCount: z.number(),
     keyTopics: z.array(z.string()),
     metaDescription: z.string().optional(),
-    structuredData: z.record(z.any()).optional(),
+    structuredData: z.record(z.string(), z.any()).optional(),
     lastUpdated: z.string().optional(),
   })),
   brandAnalysis: z.object({
@@ -62,10 +64,17 @@ export const researchPipelineWorkflow = inngest.createFunction(
   {
     id: 'research-pipeline-workflow',
     name: 'Research Pipeline Workflow',
-    concurrency: {
-      limit: CONCURRENCY_LIMITS['project/research-started'],
-      key: 'event.data.userId',
-    },
+    concurrency: [
+      {
+        limit: CONCURRENCY_LIMITS['project/research-started'],
+        key: 'event.data.userId',
+      },
+      {
+        limit: 1,
+        scope: "account",
+        key: '"gemini-quota-limit"', // Global Gemini quota limit protection
+      }
+    ],
     retries: RETRY_CONFIG['external-api'].attempts,
   },
   { event: 'project/research-started' },
@@ -88,76 +97,85 @@ export const researchPipelineWorkflow = inngest.createFunction(
       return duplicateCheck;
     }
 
-    // Update project status to researching
-    await step.run('update-project-status', async () => {
-      const { error } = await supabase
-        .from('projects')
-        .update({ 
-          status: 'researching',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', projectId);
-
-      if (error) {
-        throw new Error(`Failed to update project status: ${error.message}`);
-      }
-
-      // Send real-time update
-      await inngest.send({
-        name: 'project/status-updated',
-        data: {
-          userId,
-          projectId,
-          status: 'researching',
-          progress: 10,
-          message: 'Starting research phase...',
-        },
-      });
+    // Update project status to researching with detailed messaging
+    await step.run('update-project-status-researching', async () => {
+      await statusHelpers.setResearching(projectId, 'Initializing research phase');
     });
 
-    // Step 1: Scrape competitor content with retry logic
-    const competitorData = await step.run('scrape-competitors', async () => {
-      console.log(`Scraping ${competitorUrls.length} competitor URLs`);
-      
-      try {
-        const scraped = await tavilyService.scrapeCompetitors(competitorUrls);
+    // Step 1: Scrape competitor content with status updates
+    const competitorData = await step.run('scrape-competitors', 
+      async () => {
+        console.log(`Scraping ${competitorUrls.length} competitor URLs`);
         
-        // Send progress update
-        await inngest.send({
-          name: 'project/status-updated',
-          data: {
-            userId,
-            projectId,
-            status: 'researching',
-            progress: 30,
-            message: `Scraped ${scraped.length} competitor sites`,
-          },
-        });
+        try {
+          // Update status: Starting competitor analysis
+          await updateProjectStatus(
+            projectId, 
+            'researching', 
+            `🚀 Going: Analyzing ${competitorUrls.length} competitor websites...`,
+            { progress: 25, currentStep: 'Competitor Analysis' }
+          );
+          
+          const scraped = await tavilyService.scrapeCompetitors(competitorUrls);
+          
+          // Update status: Competitor analysis complete
+          await updateProjectStatus(
+            projectId, 
+            'researching', 
+            `🚀 Going: Successfully analyzed ${scraped.length} competitor sites`,
+            { progress: 40, currentStep: 'Processing competitor data' }
+          );
 
-        return scraped;
-      } catch (error) {
-        console.error('Competitor scraping failed:', error);
-        
-        // Try fallback approach with individual URL processing
-        const fallbackResults = [];
-        for (const url of competitorUrls) {
-          try {
-            const result = await tavilyService.scrapeCompetitors([url]);
-            fallbackResults.push(...result);
-          } catch (urlError) {
-            console.error(`Failed to scrape ${url}:`, urlError);
+          return scraped;
+        } catch (error: any) {
+          console.error('Competitor scraping failed:', error);
+          
+          // Handle rate limit specifically
+          if (error.message.includes('rate limit') || error.status === 429) {
+            await updateProjectStatus(
+              projectId,
+              'stuck',
+              '⚠️ Stuck: Tavily API rate limit hit, retrying automatically...',
+              { 
+                estimatedTimeRemaining: 60,
+                currentStep: 'Waiting for Tavily rate limit reset'
+              }
+            );
+            throw error; // Let Inngest retry
           }
+          
+          // Try fallback approach with individual URL processing
+          console.log('Attempting fallback scraping approach...');
+          await updateProjectStatus(
+            projectId,
+            'researching',
+            '🚀 Going: Trying alternative scraping approach...',
+            { progress: 30, currentStep: 'Fallback scraping' }
+          );
+          
+          const fallbackResults = [];
+          for (const url of competitorUrls) {
+            try {
+              const result = await tavilyService.scrapeCompetitors([url]);
+              fallbackResults.push(...result);
+            } catch (urlError) {
+              console.error(`Failed to scrape ${url}:`, urlError);
+            }
+          }
+          
+          if (fallbackResults.length === 0) {
+            // Handle permanent errors
+            await statusHelpers.setAIError(projectId, `Competitor analysis failed: ${error.message}`);
+            throw new NonRetriableError(`Competitor scraping failed: ${error.message}`);
+          }
+          
+          return fallbackResults;
         }
-        
-        if (fallbackResults.length === 0) {
-          throw new Error('Failed to scrape any competitor URLs');
-        }
-        
-        return fallbackResults;
+      },
+      {
+        retries: RETRY_CONFIG['external-api'].attempts,
       }
-    }, {
-      retries: RETRY_CONFIG['external-api'].attempts,
-    });
+    );
 
     // Step 2: Process brand document if provided
     const brandAnalysis = await step.run('process-brand-document', async () => {
@@ -206,88 +224,111 @@ export const researchPipelineWorkflow = inngest.createFunction(
         // Continue without brand analysis rather than failing the entire pipeline
         return null;
       }
-    }, {
-      retries: RETRY_CONFIG['database-operation'].attempts,
     });
 
     // Step 3: Generate comprehensive research analysis using AI
-    const researchAnalysis = await step.run('generate-research-analysis', async () => {
-      console.log('Generating AI-powered research analysis');
-      
-      const analysisPrompt = `
-        Analyze the following competitor research data and brand information to create a comprehensive content strategy:
-
-        TOPIC: ${topic}
-        TONE: ${tone}
-        FORMAT: ${format}
-
-        COMPETITOR DATA:
-        ${competitorData.map((comp, index) => `
-        Competitor ${index + 1}: ${comp.title} (${comp.url})
-        Word Count: ${comp.wordCount}
-        Key Topics: ${comp.keyTopics.join(', ')}
-        Headings: ${comp.headings.slice(0, 5).join(', ')}
-        Content Preview: ${comp.content.substring(0, 500)}...
-        `).join('\n')}
-
-        ${brandAnalysis ? `
-        BRAND ANALYSIS:
-        Brand Tone: ${brandAnalysis.tone}
-        Key Messages: ${brandAnalysis.keyMessages.join(', ')}
-        Target Audience: ${brandAnalysis.targetAudience}
-        Brand Values: ${brandAnalysis.brandValues.join(', ')}
-        Competitive Advantages: ${brandAnalysis.competitiveAdvantages.join(', ')}
-        Content Themes: ${brandAnalysis.contentThemes.join(', ')}
-        ` : ''}
-
-        Please provide a comprehensive research summary including:
-        1. Top competitors and their strengths
-        2. Key insights from competitor analysis
-        3. Content opportunities and gaps
-        4. Recommended content approach
-        5. Target keywords for SEO
-        6. Competitive gaps we can exploit
-        7. Overall content strategy
-
-        Format your response as a structured analysis with clear sections.
-      `;
-
-      try {
-        const aiResponse = await generateAIText(analysisPrompt, 'research', userId);
+    const researchAnalysis = await step.run('generate-research-analysis',
+      async () => {
+        console.log('Generating AI-powered research analysis');
         
-        // Parse AI response into structured format
-        const structuredAnalysis = await parseResearchAnalysis(aiResponse.text, competitorData, brandAnalysis);
-        
-        // Send progress update
-        await inngest.send({
-          name: 'project/status-updated',
-          data: {
-            userId,
+        try {
+          // 1. Mark as 'Going' - AI is actively working
+          await updateProjectStatus(
             projectId,
-            status: 'researching',
-            progress: 80,
-            message: 'Research analysis completed',
-          },
-        });
+            'researching',
+            '🚀 Going: AI is analyzing competitors and generating insights...',
+            { progress: 60, currentStep: 'AI Analysis' }
+          );
+          
+          const analysisPrompt = `
+            Analyze the following competitor research data and brand information to create a comprehensive content strategy:
 
-        return {
-          analysis: structuredAnalysis,
-          tokensUsed: aiResponse.inputTokens + aiResponse.outputTokens,
-          cost: aiResponse.cost,
-        };
-      } catch (error) {
-        console.error('AI research analysis failed:', error);
-        
-        // Generate fallback analysis
-        return {
-          analysis: generateFallbackAnalysis(competitorData, brandAnalysis, topic),
-          tokensUsed: 0,
-          cost: 0,
-        };
+            TOPIC: ${topic}
+            TONE: ${tone}
+            FORMAT: ${format}
+
+            COMPETITOR DATA:
+            ${competitorData.map((comp, index) => `
+            Competitor ${index + 1}: ${comp.title} (${comp.url})
+            Word Count: ${comp.wordCount}
+            Key Topics: ${comp.keyTopics.join(', ')}
+            Headings: ${comp.headings.slice(0, 5).join(', ')}
+            Content Preview: ${comp.content.substring(0, 500)}...
+            `).join('\n')}
+
+            ${brandAnalysis ? `
+            BRAND ANALYSIS:
+            Brand Tone: ${brandAnalysis.tone}
+            Key Messages: ${brandAnalysis.keyMessages.join(', ')}
+            Target Audience: ${brandAnalysis.targetAudience}
+            Brand Values: ${brandAnalysis.brandValues.join(', ')}
+            Competitive Advantages: ${brandAnalysis.competitiveAdvantages.join(', ')}
+            Content Themes: ${brandAnalysis.contentThemes.join(', ')}
+            ` : ''}
+
+            Please provide a comprehensive research summary including:
+            1. Top competitors and their strengths
+            2. Key insights from competitor analysis
+            3. Content opportunities and gaps
+            4. Recommended content approach
+            5. Target keywords for SEO
+            6. Competitive gaps we can exploit
+            7. Overall content strategy
+
+            Format your response as a structured analysis with clear sections.
+          `;
+
+          const aiResponse = await generateAIText(analysisPrompt, 'research', userId);
+          
+          // Parse AI response into structured format
+          const structuredAnalysis = await parseResearchAnalysis(aiResponse.text, competitorData, brandAnalysis);
+          
+          // Send progress update
+          await updateProjectStatus(
+            projectId,
+            'researching',
+            '🚀 Going: Research analysis completed',
+            { progress: 80, currentStep: 'Finalizing research' }
+          );
+
+          return {
+            analysis: structuredAnalysis,
+            tokensUsed: aiResponse.inputTokens + aiResponse.outputTokens,
+            cost: aiResponse.cost,
+          };
+        } catch (error: any) {
+          console.error('AI research analysis failed:', error);
+          
+          // 2. Mark as 'Stuck' if we hit the Google Quota limit
+          if (error.message.includes("quota") || error.statusCode === 429) {
+            await updateProjectStatus(
+              projectId,
+              'stuck',
+              '⚠️ Stuck: Waiting for Google Quota reset (60s)...',
+              { 
+                estimatedTimeRemaining: 60,
+                currentStep: 'Waiting for quota reset'
+              }
+            );
+          } else if (error.message.includes("rate limit")) {
+            await updateProjectStatus(
+              projectId,
+              'stuck',
+              '⚠️ Stuck: Rate limit hit, retrying automatically...',
+              { 
+                estimatedTimeRemaining: 30,
+                currentStep: 'Waiting for rate limit reset'
+              }
+            );
+          }
+          
+          throw error; // Let Inngest retry
+        }
+      },
+      {
+        retries: RETRY_CONFIG['external-api'].attempts,
       }
-    }, {
-      retries: RETRY_CONFIG['ai-request'].attempts,
-    });
+    );
 
     // Step 4: Store research results in database
     await step.run('store-research-results', async () => {
@@ -368,8 +409,6 @@ export const researchPipelineWorkflow = inngest.createFunction(
         },
       });
 
-    }, {
-      retries: RETRY_CONFIG['database-operation'].attempts,
     });
 
     const result = {
@@ -397,6 +436,11 @@ export const researchCompletionHandler = inngest.createFunction(
   {
     id: 'research-completion-handler',
     name: 'Research Completion Handler',
+    concurrency: {
+      limit: 1,
+      scope: "account",
+      key: '"gemini-quota-limit"', // Global Gemini quota limit protection
+    },
     retries: RETRY_CONFIG['default'].attempts,
   },
   { event: 'research/completed' },
@@ -446,6 +490,11 @@ export const researchRetryHandler = inngest.createFunction(
   {
     id: 'research-retry-handler',
     name: 'Research Retry Handler',
+    concurrency: {
+      limit: 1,
+      scope: "account",
+      key: '"gemini-quota-limit"', // Global Gemini quota limit protection
+    },
     retries: 1, // Only retry once to avoid infinite loops
   },
   { event: 'research/retry' },

@@ -5,9 +5,6 @@ export const createProjectSchema = z.object({
   topic: z.string()
     .min(3, 'Topic must be at least 3 characters long')
     .max(200, 'Topic must be less than 200 characters'),
-  competitorUrls: z.array(z.string().url('Invalid URL format'))
-    .min(1, 'At least one competitor URL is required')
-    .max(5, 'Maximum 5 competitor URLs allowed'),
   tone: z.enum(['professional', 'witty', 'data-driven'], {
     message: 'Please select a valid tone'
   }),
@@ -25,10 +22,6 @@ export const updateProjectSchema = z.object({
   topic: z.string()
     .min(3, 'Topic must be at least 3 characters long')
     .max(200, 'Topic must be less than 200 characters')
-    .optional(),
-  competitorUrls: z.array(z.string().url('Invalid URL format'))
-    .min(1, 'At least one competitor URL is required')
-    .max(5, 'Maximum 5 competitor URLs allowed')
     .optional(),
   tone: z.enum(['professional', 'witty', 'data-driven'])
     .optional(),
@@ -69,11 +62,8 @@ export const blueprintSchema = z.object({
   targetKeywords: z.array(z.string()).min(1, 'At least one target keyword is required')
 });
 
-// Research request validation schema
+// Research request validation schema - AI handles competitor discovery
 export const researchRequestSchema = z.object({
-  competitorUrls: z.array(z.string().url('Invalid URL format'))
-    .min(1, 'At least one competitor URL is required')
-    .max(5, 'Maximum 5 competitor URLs allowed'),
   brandDocument: z.string().optional()
 });
 

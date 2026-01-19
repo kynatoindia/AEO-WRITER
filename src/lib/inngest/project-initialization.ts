@@ -8,15 +8,22 @@ import { INFRASTRUCTURE_CONFIG } from '@/lib/infrastructure/config';
 export const handleProjectInitialization = inngest.createFunction(
   {
     id: 'handle-project-initialization',
-    concurrency: {
-      limit: CONCURRENCY_LIMITS['project/created'] || 5,
-      key: 'event.data.userId',
-    },
+    concurrency: [
+      {
+        limit: CONCURRENCY_LIMITS['project/created'] || 5,
+        key: 'event.data.userId',
+      },
+      {
+        limit: 1,
+        scope: "account",
+        key: '"gemini-quota-limit"', // Global Gemini quota limit protection
+      }
+    ],
     retries: RETRY_CONFIG['database-operation'].attempts,
   },
   { event: 'project/created' },
   async ({ event, step }) => {
-    const { userId, projectId, topic, competitorUrls, tone, format, brandDocumentPath, securityMetadata } = event.data;
+    const { userId, projectId, topic, tone, format, brandDocumentPath, securityMetadata } = event.data;
     
     const idempotencyKey = generateIdempotencyKey.userOperation(userId, `project_init_${projectId}`);
     
@@ -62,8 +69,6 @@ export const handleProjectInitialization = inngest.createFunction(
             timestamp: new Date().toISOString(),
           },
         });
-    }, {
-      retries: RETRY_CONFIG['database-operation'].attempts,
     });
 
     // Enhanced brand document processing with security validation
@@ -168,88 +173,19 @@ export const handleProjectInitialization = inngest.createFunction(
 
         throw new Error(`Brand document processing failed: ${error.message}`);
       }
-    }, {
-      retries: RETRY_CONFIG['external-api'].attempts,
     });
 
-    // Enhanced competitor URL validation with accessibility checks
-    const urlValidationResult = await step.run('validate-competitor-urls', async () => {
-      const validUrls: string[] = [];
-      const invalidUrls: string[] = [];
-      const accessibilityResults: Array<{ url: string; accessible: boolean; statusCode?: number }> = [];
-
-      for (const url of competitorUrls) {
-        try {
-          // Basic URL validation
-          const urlObj = new URL(url);
-          
-          // Check protocol
-          if (!['http:', 'https:'].includes(urlObj.protocol)) {
-            invalidUrls.push(url);
-            continue;
-          }
-
-          // Basic accessibility check (HEAD request simulation)
-          // In production, you might want to do actual HTTP checks
-          const isAccessible = await checkUrlAccessibility(url);
-          accessibilityResults.push({
-            url,
-            accessible: isAccessible.accessible,
-            statusCode: isAccessible.statusCode,
-          });
-
-          if (isAccessible.accessible) {
-            validUrls.push(url);
-          } else {
-            invalidUrls.push(url);
-          }
-        } catch {
-          invalidUrls.push(url);
-          accessibilityResults.push({
-            url,
-            accessible: false,
-          });
-        }
-      }
-
-      if (validUrls.length === 0) {
-        throw new Error('No accessible competitor URLs found');
-      }
-
-      const supabase = await createServerSupabaseClient();
-      
-      // Send progress update with detailed URL validation results
-      await supabase
-        .channel(`project:${projectId}`)
-        .send({
-          type: 'broadcast',
-          event: 'project_status_update',
-          payload: {
-            projectId,
-            status: 'researching',
-            message: `Validated ${validUrls.length}/${competitorUrls.length} competitor URLs`,
-            progress: 40,
-            timestamp: new Date().toISOString(),
-            metadata: {
-              urlValidation: {
-                total: competitorUrls.length,
-                valid: validUrls.length,
-                invalid: invalidUrls.length,
-                accessibilityResults,
-              },
-            },
-          },
-        });
-
+    // AI Competitor Discovery - No manual URLs needed
+    const competitorDiscoveryResult = await step.run('ai-competitor-discovery', async () => {
       return {
-        validUrls,
-        invalidUrls,
-        validCount: validUrls.length,
-        totalCount: competitorUrls.length,
-        accessibilityResults,
+        message: 'AI will automatically discover and analyze top competitors during research phase',
+        aiPowered: true,
+        strategicIntelligenceLoop: {
+          scoutPhase: 'Automated discovery of ranking leaders',
+          infiltratorPhase: 'Deep intelligence extraction via Map-Reduce',
+          architectPhase: 'Gap analysis and benchmarking for superior authority'
+        }
       };
-    }, {
-      retries: RETRY_CONFIG['default'].attempts,
     });
 
     // Initialize enhanced project metadata
@@ -261,8 +197,8 @@ export const handleProjectInitialization = inngest.createFunction(
           startedAt: new Date().toISOString(),
           completedAt: new Date().toISOString(),
           brandDocumentProcessed: brandProcessingResult.processed,
-          validCompetitorUrls: urlValidationResult.validCount,
-          totalCompetitorUrls: urlValidationResult.totalCount,
+          aiCompetitorDiscovery: true,
+          strategicIntelligenceLoop: competitorDiscoveryResult.strategicIntelligenceLoop,
           securityValidated: brandProcessingResult.securityValidated ?? false,
           virusScanPassed: brandProcessingResult.virusScanPassed ?? true,
         },
@@ -274,12 +210,12 @@ export const handleProjectInitialization = inngest.createFunction(
         },
         security: {
           fileUploadSecure: !!brandDocumentPath,
-          urlValidationComplete: true,
+          aiCompetitorDiscovery: true,
           virusScanResults: securityMetadata?.virusScanResult,
         },
-        estimatedCost: calculateEstimatedCost(urlValidationResult.validCount, brandProcessingResult.processed),
-        estimatedTokens: calculateEstimatedTokens(urlValidationResult.validCount, brandProcessingResult.processed),
-        urlValidation: urlValidationResult.accessibilityResults,
+        estimatedCost: calculateEstimatedCost(0, brandProcessingResult.processed), // AI discovery has no URL cost
+        estimatedTokens: calculateEstimatedTokens(0, brandProcessingResult.processed), // AI discovery optimized
+        competitorDiscovery: competitorDiscoveryResult,
       };
 
       const { error } = await supabase
@@ -310,22 +246,19 @@ export const handleProjectInitialization = inngest.createFunction(
             metadata,
           },
         });
-    }, {
-      retries: RETRY_CONFIG['database-operation'].attempts,
     });
 
     // Increment user project usage
     await step.run('increment-project-usage', async () => {
       await incrementUsage(userId, 'projects');
-    }, {
-      retries: RETRY_CONFIG['database-operation'].attempts,
     });
 
     const result = {
       success: true,
       projectId,
       brandDocumentProcessed: brandProcessingResult.processed,
-      validCompetitorUrls: urlValidationResult.validCount,
+      aiCompetitorDiscovery: true,
+      strategicIntelligenceLoop: competitorDiscoveryResult.strategicIntelligenceLoop,
       securityValidated: brandProcessingResult.securityValidated ?? false,
       initializationCompleted: true,
       idempotencyKey,
@@ -343,15 +276,22 @@ export const handleProjectInitialization = inngest.createFunction(
 export const handleImmediateProjectInitialization = inngest.createFunction(
   {
     id: 'handle-immediate-project-initialization',
-    concurrency: {
-      limit: 10, // Higher concurrency for immediate processing
-      key: 'event.data.userId',
-    },
+    concurrency: [
+      {
+        limit: 10, // Higher concurrency for immediate processing
+        key: 'event.data.userId',
+      },
+      {
+        limit: 1,
+        scope: "account",
+        key: '"gemini-quota-limit"', // Global Gemini quota limit protection
+      }
+    ],
     retries: RETRY_CONFIG['database-operation'].attempts,
   },
   { event: 'project/initialize' },
   async ({ event, step }) => {
-    const { userId, projectId, competitorUrls, brandDocumentPath, priority } = event.data;
+    const { userId, projectId, brandDocumentPath, priority } = event.data;
     
     // Send immediate status update
     await step.run('send-immediate-status-update', async () => {
@@ -373,14 +313,18 @@ export const handleImmediateProjectInitialization = inngest.createFunction(
         });
     });
 
-    // Trigger research pipeline immediately
-    await step.run('trigger-research-pipeline', async () => {
+    // Trigger modular research pipeline immediately with AI competitor discovery
+    await step.run('trigger-modular-research-pipeline', async () => {
       await inngest.send({
-        name: 'project/research-started',
+        name: 'project/modular-research-started',
         data: {
           userId,
           projectId,
-          competitorUrls,
+          topic: event.data.topic,
+          tone: event.data.tone,
+          format: event.data.format,
+          industry: event.data.industry || 'general',
+          targetAudience: event.data.targetAudience || 'general',
           brandDocumentPath,
           priority: 'high',
         },
@@ -440,6 +384,11 @@ function calculateEstimatedTokens(urlCount: number, hasBrandDocument: boolean): 
 export const handleProjectStatusUpdate = inngest.createFunction(
   {
     id: 'handle-project-status-update',
+    concurrency: {
+      limit: 1,
+      scope: "account",
+      key: '"gemini-quota-limit"', // Global Gemini quota limit protection
+    },
     retries: RETRY_CONFIG['database-operation'].attempts,
   },
   { event: 'project/status-update' },
@@ -484,8 +433,6 @@ export const handleProjectStatusUpdate = inngest.createFunction(
             timestamp: new Date().toISOString(),
           },
         });
-    }, {
-      retries: RETRY_CONFIG['database-operation'].attempts,
     });
 
     return { success: true, projectId, status, timestamp: new Date().toISOString() };

@@ -179,14 +179,12 @@ export async function POST(request: NextRequest): Promise<NextResponse<APIRespon
     const formData = await request.formData();
     const projectData = {
       topic: formData.get('topic') as string,
-      competitorUrls: JSON.parse(formData.get('competitorUrls') as string || '[]'),
       tone: formData.get('tone') as string,
       format: formData.get('format') as string,
     };
     
     console.log('Project data parsed:', {
       topic: projectData.topic?.substring(0, 50) + '...',
-      competitorUrlsCount: projectData.competitorUrls?.length,
       tone: projectData.tone,
       format: projectData.format
     });
@@ -382,7 +380,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<APIRespon
       .insert({
         user_id: user.id,
         topic: validationResult.data.topic,
-        competitor_urls: validationResult.data.competitorUrls,
+        competitor_urls: [], // AI will discover competitors automatically
         tone: validationResult.data.tone as any,
         format: validationResult.data.format as any,
         brand_document_path: brandDocumentPath,
@@ -429,7 +427,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<APIRespon
             metadata: {
               fileUploaded: !!brandDocumentPath,
               virusScanPassed: virusScanResult?.isClean ?? true,
-              competitorUrlCount: validationResult.data.competitorUrls.length,
+              aiCompetitorDiscovery: true, // AI handles competitor discovery
             },
           },
         });
@@ -441,16 +439,17 @@ export async function POST(request: NextRequest): Promise<NextResponse<APIRespon
     // Trigger background processing via Inngest (conditional)
     if (inngest) {
       try {
-        // Send project creation event with enhanced metadata
+        // Always use modular research pipeline with AI competitor discovery
         await inngest.send({
-          name: 'project/created',
+          name: 'project/modular-research-started',
           data: {
             userId: user.id,
             projectId: project.id,
             topic: project.topic,
-            competitorUrls: project.competitor_urls,
             tone: project.tone,
             format: project.format,
+            industry: 'general', // Could be extracted from topic analysis in the future
+            targetAudience: 'general', // Could be extracted from topic analysis in the future
             brandDocumentPath,
             securityMetadata: {
               virusScanResult,
@@ -460,7 +459,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<APIRespon
           },
         });
 
-        console.log('Inngest events sent successfully');
+        console.log('Modular research pipeline triggered successfully');
 
       } catch (inngestError) {
         console.error('Inngest event error (non-blocking):', inngestError);

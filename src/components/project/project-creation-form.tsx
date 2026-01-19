@@ -11,7 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
-import { Loader2, Upload, X, Plus, ExternalLink } from 'lucide-react';
+import { Loader2, Upload, X } from 'lucide-react';
 import { ContentTone, ContentFormat, Project } from '@/lib/types';
 
 interface ProjectCreationFormProps {
@@ -21,7 +21,6 @@ interface ProjectCreationFormProps {
 
 interface FormData {
   topic: string;
-  competitorUrls: string[];
   tone: ContentTone | '';
   format: ContentFormat | '';
   brandDocument: File | null;
@@ -29,7 +28,6 @@ interface FormData {
 
 interface FormErrors {
   topic?: string;
-  competitorUrls?: string;
   tone?: string;
   format?: string;
   brandDocument?: string;
@@ -39,11 +37,9 @@ export function ProjectCreationForm({ onSuccess, onCancel }: ProjectCreationForm
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [currentUrl, setCurrentUrl] = useState('');
   
   const [formData, setFormData] = useState<FormData>({
     topic: '',
-    competitorUrls: [],
     tone: '',
     format: '',
     brandDocument: null,
@@ -63,26 +59,7 @@ export function ProjectCreationForm({ onSuccess, onCancel }: ProjectCreationForm
       newErrors.topic = 'Topic must be less than 200 characters';
     }
 
-    // Competitor URLs validation
-    if (formData.competitorUrls.length === 0) {
-      newErrors.competitorUrls = 'At least one competitor URL is required';
-    } else if (formData.competitorUrls.length > 5) {
-      newErrors.competitorUrls = 'Maximum 5 competitor URLs allowed';
-    } else {
-      // Validate each URL
-      const invalidUrls = formData.competitorUrls.filter(url => {
-        try {
-          new URL(url);
-          return false;
-        } catch {
-          return true;
-        }
-      });
-      
-      if (invalidUrls.length > 0) {
-        newErrors.competitorUrls = 'All URLs must be valid';
-      }
-    }
+    // No competitor URL validation needed - AI handles discovery automatically
 
     // Tone validation
     if (!formData.tone) {
@@ -105,38 +82,6 @@ export function ProjectCreationForm({ onSuccess, onCancel }: ProjectCreationForm
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
-  };
-
-  const addCompetitorUrl = () => {
-    if (!currentUrl.trim()) return;
-    
-    try {
-      new URL(currentUrl);
-      if (formData.competitorUrls.length >= 5) {
-        toast.error('Maximum 5 competitor URLs allowed');
-        return;
-      }
-      
-      if (formData.competitorUrls.includes(currentUrl)) {
-        toast.error('URL already added');
-        return;
-      }
-
-      setFormData(prev => ({
-        ...prev,
-        competitorUrls: [...prev.competitorUrls, currentUrl],
-      }));
-      setCurrentUrl('');
-    } catch {
-      toast.error('Please enter a valid URL');
-    }
-  };
-
-  const removeCompetitorUrl = (index: number) => {
-    setFormData(prev => ({
-      ...prev,
-      competitorUrls: prev.competitorUrls.filter((_, i) => i !== index),
-    }));
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -165,7 +110,6 @@ export function ProjectCreationForm({ onSuccess, onCancel }: ProjectCreationForm
       // Create FormData for file upload
       const submitData = new FormData();
       submitData.append('topic', formData.topic);
-      submitData.append('competitorUrls', JSON.stringify(formData.competitorUrls));
       submitData.append('tone', formData.tone);
       submitData.append('format', formData.format);
       
@@ -317,50 +261,38 @@ export function ProjectCreationForm({ onSuccess, onCancel }: ProjectCreationForm
             )}
           </div>
 
-          {/* Competitor URLs */}
+          {/* AI Competitor Discovery Info */}
           <div className="space-y-2">
-            <Label>Competitor URLs * (1-5 URLs)</Label>
-            <div className="flex gap-2">
-              <Input
-                placeholder="https://example.com/article"
-                value={currentUrl}
-                onChange={(e) => setCurrentUrl(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addCompetitorUrl())}
-                className="flex-1"
-              />
-              <Button
-                type="button"
-                onClick={addCompetitorUrl}
-                variant="outline"
-                size="icon"
-                disabled={formData.competitorUrls.length >= 5}
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
-            </div>
-            
-            {formData.competitorUrls.length > 0 && (
-              <div className="space-y-2">
-                {formData.competitorUrls.map((url, index) => (
-                  <div key={index} className="flex items-center gap-2 p-2 bg-gray-50 rounded">
-                    <ExternalLink className="h-4 w-4 text-gray-400" />
-                    <span className="flex-1 text-sm truncate">{url}</span>
-                    <Button
-                      type="button"
-                      onClick={() => removeCompetitorUrl(index)}
-                      variant="ghost"
-                      size="sm"
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
+            <Label>🤖 AI Competitor Discovery</Label>
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-start gap-3">
+                <div className="flex-shrink-0 w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                  <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <h4 className="text-sm font-medium text-blue-900 mb-1">Strategic Intelligence Loop</h4>
+                  <p className="text-sm text-blue-700 mb-2">
+                    Our AI acts as your Market Analyst, automatically discovering and analyzing top-ranking competitors for your topic.
+                  </p>
+                  <div className="space-y-1 text-xs text-blue-600">
+                    <div className="flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 bg-blue-400 rounded-full"></span>
+                      <span><strong>Scout Phase:</strong> Discovers real ranking leaders using advanced search queries</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 bg-blue-400 rounded-full"></span>
+                      <span><strong>Infiltrator Phase:</strong> Extracts every fact, data point, and semantic keyword</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 bg-blue-400 rounded-full"></span>
+                      <span><strong>Architect Phase:</strong> Identifies content gaps and builds superior authority</span>
+                    </div>
                   </div>
-                ))}
+                </div>
               </div>
-            )}
-            
-            {errors.competitorUrls && (
-              <p className="text-sm text-red-500">{errors.competitorUrls}</p>
-            )}
+            </div>
           </div>
 
           {/* Tone Selection */}

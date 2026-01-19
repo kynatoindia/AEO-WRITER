@@ -35,7 +35,14 @@ const BlueprintSchema = z.object({
 export const generateContentStrategy = inngest.createFunction(
   {
     id: 'generate-content-strategy',
-    concurrency: { limit: 1, key: 'event.data.userId' },
+    concurrency: [
+      { limit: 1, key: 'event.data.userId' },
+      {
+        limit: 1,
+        scope: "account",
+        key: '"gemini-quota-limit"', // Global Gemini quota limit protection
+      }
+    ],
   },
   { event: 'content/strategy-generate' },
   async ({ event, step }) => {
@@ -145,7 +152,14 @@ export const generateContentStrategy = inngest.createFunction(
 export const generateContentSection = inngest.createFunction(
   {
     id: 'generate-content-section',
-    concurrency: { limit: 2, key: 'event.data.projectId' },
+    concurrency: [
+      { limit: 2, key: 'event.data.projectId' },
+      {
+        limit: 1,
+        scope: "account",
+        key: '"gemini-quota-limit"', // Global Gemini quota limit protection
+      }
+    ],
   },
   { event: 'content/section-generate' },
   async ({ event, step }) => {
@@ -251,7 +265,14 @@ export const generateContentSection = inngest.createFunction(
 export const assembleAndPolishContent = inngest.createFunction(
   {
     id: 'assemble-and-polish-content',
-    concurrency: { limit: 1, key: 'event.data.projectId' },
+    concurrency: [
+      { limit: 1, key: 'event.data.projectId' },
+      {
+        limit: 1,
+        scope: "account",
+        key: '"gemini-quota-limit"', // Global Gemini quota limit protection
+      }
+    ],
   },
   { event: 'content/final-assembly' },
   async ({ event, step }) => {

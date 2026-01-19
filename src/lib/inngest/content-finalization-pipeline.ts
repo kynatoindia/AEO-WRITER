@@ -3,10 +3,10 @@ import { redis, CACHE_KEYS } from '@/lib/redis/client';
 import { generateAIText, generateStructuredOutput } from '@/lib/ai/gateway';
 import { createRouteClient } from '@/lib/supabase/server';
 import { z } from 'zod';
-import type { 
-  ContentBlueprint, 
-  SEOMetadata, 
-  Project 
+import type {
+  ContentBlueprint,
+  SEOMetadata,
+  Project
 } from '@/lib/types';
 
 // Schema for enhanced SEO metadata generation
@@ -91,46 +91,53 @@ const TakeawaysSchema = z.object({
 export const finalizeContent = inngest.createFunction(
   {
     id: 'finalize-content',
-    concurrency: {
-      limit: CONCURRENCY_LIMITS['content/finalize'] || 2,
-      key: 'event.data.projectId',
-    },
+    concurrency: [
+      {
+        limit: CONCURRENCY_LIMITS['content/finalize'] || 2,
+        key: 'event.data.projectId',
+      },
+      {
+        limit: 1,
+        scope: "account",
+        key: '"gemini-quota-limit"', // Global Gemini quota limit protection
+      }
+    ],
     retries: RETRY_CONFIG['ai-request'].attempts,
   },
   { event: 'content/finalize' },
   async ({ event, step }) => {
     const { userId, projectId, generatedContent, blueprint } = event.data;
-    
+
     const idempotencyKey = generateIdempotencyKey.userOperation(userId, `finalize_${projectId}`);
-    
+
     // Check for duplicate finalization requests
     const duplicateCheck = await step.run('check-duplicate-finalization', async () => {
       const existingResult = await redis.get(`idempotency:${idempotencyKey}`);
       return existingResult ? JSON.parse(existingResult as string) : null;
     });
-    
+
     if (duplicateCheck) {
       console.log(`Duplicate finalization request detected for ${idempotencyKey}`);
       return duplicateCheck;
     }
-    
+
     // Update project status to finalizing
     await step.run('update-project-status-finalizing', async () => {
       const supabase = await createRouteClient();
-      
+
       const { error } = await supabase
         .from('projects')
-        .update({ 
+        .update({
           status: 'finalizing',
           updated_at: new Date().toISOString()
         })
         .eq('id', projectId)
         .eq('user_id', userId);
-      
+
       if (error) {
         console.error(`Failed to update project status: ${error.message}`);
       }
-      
+
       // Send real-time update
       await supabase
         .channel(`project:${projectId}`)
@@ -144,7 +151,7 @@ export const finalizeContent = inngest.createFunction(
           }
         });
     });
-    
+
     // Step 1: Polish the content
     const polishedContent = await step.run('polish-content', async () => {
       const polishPrompt = `
@@ -172,16 +179,16 @@ export const finalizeContent = inngest.createFunction(
         
         Return the polished, publication-ready article in markdown format.
       `;
-      
+
       const result = await generateAIText(
         polishPrompt,
         'polish',
         userId
       );
-      
+
       return result.text;
     });
-    
+
     // Step 2: Generate enhanced SEO metadata
     const enhancedSEO = await step.run('generate-enhanced-seo', async () => {
       const seoPrompt = `
@@ -207,17 +214,17 @@ export const finalizeContent = inngest.createFunction(
         
         Ensure all metadata is optimized for search engines and user engagement.
       `;
-      
+
       const result = await generateStructuredOutput(
         seoPrompt,
         EnhancedSEOMetadataSchema,
         'structured',
         userId
       );
-      
+
       return result.object;
     });
-    
+
     // Step 3: Generate FAQ section
     const faqData = await step.run('generate-faq', async () => {
       const faqPrompt = `
@@ -243,17 +250,17 @@ export const finalizeContent = inngest.createFunction(
         - Optional category for organization
         - Relevant keywords for SEO
       `;
-      
+
       const result = await generateStructuredOutput(
         faqPrompt,
         FAQSchema,
         'structured',
         userId
       );
-      
+
       return result.object;
     });
-    
+
     // Step 4: Generate structured data
     const structuredData = await step.run('generate-structured-data', async () => {
       const structuredPrompt = `
@@ -273,17 +280,17 @@ export const finalizeContent = inngest.createFunction(
         
         Ensure all structured data follows schema.org standards.
       `;
-      
+
       const result = await generateStructuredOutput(
         structuredPrompt,
         StructuredDataSchema,
         'structured',
         userId
       );
-      
+
       return result.object;
     });
-    
+
     // Step 5: Generate key takeaways and summary
     const takeaways = await step.run('generate-takeaways', async () => {
       const takeawaysPrompt = `
@@ -305,17 +312,17 @@ export const finalizeContent = inngest.createFunction(
         - Logical next steps for readers
         - Related topics that add value
       `;
-      
+
       const result = await generateStructuredOutput(
         takeawaysPrompt,
         TakeawaysSchema,
         'structured',
         userId
       );
-      
+
       return result.object;
     });
-    
+
     // Step 6: Assemble final content with all enhancements
     const finalContent = await step.run('assemble-final-content', async () => {
       const contentParts = [
@@ -353,14 +360,14 @@ export const finalizeContent = inngest.createFunction(
         '',
         ...takeaways.relatedTopics.map(topic => `- ${topic}`),
       ];
-      
+
       return contentParts.join('\n');
     });
-    
+
     // Step 7: Store finalized content and metadata
     await step.run('store-finalized-content', async () => {
       const supabase = await createRouteClient();
-      
+
       const finalizedData = {
         generated_content: finalContent,
         seo_metadata: {
@@ -372,17 +379,17 @@ export const finalizeContent = inngest.createFunction(
         status: 'completed',
         updated_at: new Date().toISOString()
       };
-      
+
       const { error } = await supabase
         .from('projects')
         .update(finalizedData)
         .eq('id', projectId)
         .eq('user_id', userId);
-      
+
       if (error) {
         throw new Error(`Failed to store finalized content: ${error.message}`);
       }
-      
+
       // Send final completion update
       await supabase
         .channel(`project:${projectId}`)
@@ -400,7 +407,7 @@ export const finalizeContent = inngest.createFunction(
           }
         });
     });
-    
+
     const result = {
       success: true,
       projectId,
@@ -413,10 +420,10 @@ export const finalizeContent = inngest.createFunction(
       idempotencyKey,
       timestamp: Date.now(),
     };
-    
+
     // Cache result for idempotency
     await redis.setex(`idempotency:${idempotencyKey}`, 7200, JSON.stringify(result));
-    
+
     return result;
   }
 );
@@ -427,32 +434,33 @@ export const autoTriggerFinalization = inngest.createFunction(
     id: 'auto-trigger-finalization',
     concurrency: {
       limit: 1,
-      key: 'event.data.projectId',
+      scope: "account",
+      key: '"gemini-quota-limit"', // Global Gemini quota limit protection
     },
     retries: RETRY_CONFIG['database-operation'].attempts,
   },
   { event: 'content/all-sections-complete' },
   async ({ event, step }) => {
     const { userId, projectId, blueprint } = event.data;
-    
+
     // Get the assembled content from the project
     const projectData = await step.run('fetch-project-content', async () => {
       const supabase = await createRouteClient();
-      
+
       const { data: project, error } = await supabase
         .from('projects')
         .select('generated_content, status')
         .eq('id', projectId)
         .eq('user_id', userId)
         .single();
-      
+
       if (error || !project) {
         throw new Error(`Project not found: ${error?.message}`);
       }
-      
+
       return project;
     });
-    
+
     // Only trigger finalization if content exists and project is in writing status
     if (projectData.generated_content && projectData.status === 'writing') {
       await step.run('trigger-finalization', async () => {
@@ -465,11 +473,11 @@ export const autoTriggerFinalization = inngest.createFunction(
             blueprint
           }
         });
-        
+
         console.log(`Auto-triggered finalization for project ${projectId}`);
       });
     }
-    
+
     return { success: true, triggered: !!projectData.generated_content };
   }
 );
@@ -480,41 +488,42 @@ export const manualTriggerFinalization = inngest.createFunction(
     id: 'manual-trigger-finalization',
     concurrency: {
       limit: 1,
-      key: 'event.data.projectId',
+      scope: "account",
+      key: '"gemini-quota-limit"', // Global Gemini quota limit protection
     },
     retries: RETRY_CONFIG['database-operation'].attempts,
   },
   { event: 'content/manual-finalize' },
   async ({ event, step }) => {
     const { userId, projectId } = event.data;
-    
+
     // Get project data including content and blueprint
     const projectData = await step.run('fetch-project-data', async () => {
       const supabase = await createRouteClient();
-      
+
       const { data: project, error } = await supabase
         .from('projects')
         .select('*')
         .eq('id', projectId)
         .eq('user_id', userId)
         .single();
-      
+
       if (error || !project) {
         throw new Error(`Project not found: ${error?.message}`);
       }
-      
+
       return project as Project;
     });
-    
+
     // Validate that project has content to finalize
     if (!projectData.generated_content) {
       throw new Error('No content available to finalize');
     }
-    
+
     if (!projectData.blueprint) {
       throw new Error('No blueprint available for finalization');
     }
-    
+
     // Trigger finalization
     await step.run('trigger-manual-finalization', async () => {
       await inngest.send({
@@ -526,12 +535,12 @@ export const manualTriggerFinalization = inngest.createFunction(
           blueprint: projectData.blueprint
         }
       });
-      
+
       console.log(`Manual finalization triggered for project ${projectId}`);
     });
-    
-    return { 
-      success: true, 
+
+    return {
+      success: true,
       projectId,
       contentLength: projectData.generated_content.length,
       hasBlueprint: !!projectData.blueprint

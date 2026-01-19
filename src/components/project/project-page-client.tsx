@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { LiveWriter } from '@/components/writer/live-writer';
+import { ProjectStatusMonitor } from '@/components/project/project-status-monitor';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -49,6 +50,8 @@ export function ProjectPageClient({ project: initialProject }: ProjectPageClient
         return { color: 'bg-yellow-100 text-yellow-800', icon: Target, description: 'Creating content blueprint' };
       case 'researching': 
         return { color: 'bg-indigo-100 text-indigo-800', icon: BarChart3, description: 'Analyzing competitors and research' };
+      case 'stuck': 
+        return { color: 'bg-amber-100 text-amber-800', icon: Clock, description: 'Temporarily paused due to rate limits' };
       case 'error': 
         return { color: 'bg-red-100 text-red-800', icon: ExternalLink, description: 'Error occurred during processing' };
       default: 
@@ -355,10 +358,18 @@ export function ProjectPageClient({ project: initialProject }: ProjectPageClient
             <CardContent className="text-center max-w-md">
               <BarChart3 className="h-16 w-16 mx-auto mb-6 text-indigo-500 animate-pulse" />
               <CardTitle className="mb-4 text-xl">Research in Progress</CardTitle>
-              <p className="text-muted-foreground mb-6 leading-relaxed">
-                We're analyzing your competitor URLs and gathering insights to create 
-                a comprehensive content strategy. This usually takes 2-5 minutes.
-              </p>
+              
+              {/* Use the ProjectStatusMonitor for detailed status updates */}
+              <div className="mb-6">
+                <ProjectStatusMonitor 
+                  projectId={project.id}
+                  onStatusChange={(status) => {
+                    // Update local project state when status changes
+                    setProject(prev => ({ ...prev, status: status.status as any }));
+                  }}
+                />
+              </div>
+              
               <div className="space-y-3">
                 <div className="w-full bg-gray-200 rounded-full h-2">
                   <div className="bg-indigo-600 h-2 rounded-full animate-pulse" style={{ width: '60%' }}></div>
@@ -449,6 +460,37 @@ export function ProjectPageClient({ project: initialProject }: ProjectPageClient
                 <Button variant="outline" size="sm" className="w-full">
                   View Error Details
                 </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ) : project.status === 'stuck' ? (
+          <Card className="h-full flex items-center justify-center">
+            <CardContent className="text-center max-w-md">
+              <Clock className="h-16 w-16 mx-auto mb-6 text-amber-500 animate-pulse" />
+              <CardTitle className="mb-4 text-xl text-amber-600">Temporarily Paused</CardTitle>
+              
+              {/* Use the ProjectStatusMonitor for detailed status updates */}
+              <div className="mb-6">
+                <ProjectStatusMonitor 
+                  projectId={project.id}
+                  onStatusChange={(status) => {
+                    // Update local project state when status changes
+                    setProject(prev => ({ ...prev, status: status.status as any }));
+                  }}
+                />
+              </div>
+              
+              <div className="space-y-3">
+                <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
+                  <p className="text-sm text-amber-800">
+                    <strong>⚠️ Rate Limited:</strong> We're currently on the Free Tier. 
+                    Your request will resume automatically in ~60 seconds.
+                  </p>
+                </div>
+                
+                <p className="text-xs text-muted-foreground">
+                  This is normal and your project will continue processing automatically.
+                </p>
               </div>
             </CardContent>
           </Card>
