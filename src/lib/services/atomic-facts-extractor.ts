@@ -108,44 +108,29 @@ export class AtomicFactsExtractor {
     userId?: string
   ): Promise<AtomicFactsExtraction> {
     const extractionPrompt = `
-      Extract atomic facts from this content about "${topic}". Convert verbose text into concise, factual statements.
-      
-      Source: ${source}
-      Content: ${content.substring(0, 8000)}${content.length > 8000 ? '...' : ''}
-      
-      Extraction Guidelines:
-      1. Each fact should be ONE clear, verifiable statement
-      2. Focus on specific data, statistics, processes, and insights
-      3. Avoid opinions, marketing language, and fluff
-      4. Include exact numbers, percentages, and measurements
-      5. Preserve technical details and methodologies
-      6. Extract key definitions and explanations
-      7. Capture important quotes and claims
-      8. Maintain factual accuracy and context
-      
-      Fact Categories:
-      - statistic: Numbers, percentages, measurements
-      - process: Steps, procedures, methodologies
-      - definition: Explanations of terms and concepts
-      - insight: Key findings and conclusions
-      - claim: Assertions and statements
-      - example: Specific cases and illustrations
-      - quote: Direct quotations from sources
-      - technical: Technical specifications and details
-      
-      Quality Requirements:
-      - High confidence facts only (avoid speculation)
-      - Relevant to the main topic
-      - Actionable and useful information
-      - Properly categorized and tagged
-      
-      Extract 10-40 high-quality atomic facts that capture the essential information.
+      SYSTEM PROMPT:
+      "You are a specialized Data Extraction Agent. Your goal is to convert the provided Markdown text into a high-density list of Atomic Facts.
+      STRICT RULES:
+      1. No Summarization: Do not use phrases like 'The article discusses...' or 'In summary...'.
+      2. Atomicity: Every single feature, pricing dollar amount, integration name, technical limit, or expert claim must be its own bullet point.
+      3. Preserve Specifics: If a competitor mentions '99.9% uptime' or '$12/user/month', you MUST include the exact numbers.
+      4. Entity Extraction: List every brand, tool, and software mentioned in the text.
+
+      OUTPUT FORMAT:
+      * [CATEGORY]: [SPECIFIC FACT]
+      Example: - PRICING: Professional tier starts at $45/user/month billed annually."
+
+      TOPIC: ${topic}
+      SOURCE: ${source}
+      CONTENT: ${content.substring(0, 8000)}${content.length > 8000 ? '...' : ''}
+
+      Extract 10-50 high-quality atomic facts that capture the essential information with maximum density.
     `;
 
     const result = await generateStructuredOutput(
       extractionPrompt,
       AtomicFactsExtractionSchema,
-      'extraction', // Use cost-effective model for extraction
+      'research', // Use research model for extraction
       userId
     );
 
@@ -172,7 +157,7 @@ export class AtomicFactsExtractor {
     }
 
     // Sort by relevance and confidence
-    return validatedFacts.sort((a, b) => 
+    return validatedFacts.sort((a, b) =>
       (b.relevanceScore * b.confidence) - (a.relevanceScore * a.confidence)
     );
   }
@@ -230,7 +215,7 @@ export class AtomicFactsExtractor {
 
     // Remove common stop words
     const stopWords = new Set(['this', 'that', 'with', 'have', 'will', 'from', 'they', 'been', 'said', 'each', 'which', 'their', 'time', 'more', 'very', 'when', 'come', 'here', 'just', 'like', 'long', 'make', 'many', 'over', 'such', 'take', 'than', 'them', 'well', 'were']);
-    
+
     const keywords = words
       .filter(word => !stopWords.has(word))
       .slice(0, 5); // Limit to 5 keywords
@@ -244,7 +229,7 @@ export class AtomicFactsExtractor {
   private calculateExtractionMetrics(originalContent: string, facts: AtomicFact[]): any {
     const originalTokens = Math.ceil(originalContent.length / 4); // Rough token estimate
     const factTokens = facts.reduce((total, fact) => total + Math.ceil(fact.fact.length / 4), 0);
-    
+
     return {
       originalTokens,
       extractedFacts: facts.length,
@@ -327,17 +312,17 @@ export class AtomicFactsExtractor {
    */
   private deduplicateFacts(facts: AtomicFact[]): AtomicFact[] {
     const uniqueFacts: AtomicFact[] = [];
-    
+
     for (const fact of facts) {
-      const isDuplicate = uniqueFacts.some(existing => 
+      const isDuplicate = uniqueFacts.some(existing =>
         this.calculateSimilarity(fact.fact, existing.fact) > 0.8
       );
-      
+
       if (!isDuplicate) {
         uniqueFacts.push(fact);
       }
     }
-    
+
     return uniqueFacts;
   }
 
@@ -348,10 +333,10 @@ export class AtomicFactsExtractor {
     // Simple similarity calculation (in production, use more sophisticated methods)
     const words1 = new Set(text1.toLowerCase().split(/\s+/));
     const words2 = new Set(text2.toLowerCase().split(/\s+/));
-    
+
     const intersection = new Set([...words1].filter(word => words2.has(word)));
     const union = new Set([...words1, ...words2]);
-    
+
     return intersection.size / union.size;
   }
 }

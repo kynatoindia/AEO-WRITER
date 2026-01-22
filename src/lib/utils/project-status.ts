@@ -6,10 +6,11 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-export type ProjectStatus = 
+export type ProjectStatus =
   | 'created'
   | 'initializing'
   | 'researching'
+  | 'planning'
   | 'generating_blueprint'
   | 'generating_content'
   | 'finalizing'
@@ -155,55 +156,55 @@ export const STATUS_MESSAGES = {
  * Helper to update status with common scenarios
  */
 export const statusHelpers = {
-  setInitializing: (projectId: string) => 
+  setInitializing: (projectId: string) =>
     updateProjectStatus(projectId, 'initializing', STATUS_MESSAGES.INITIALIZING, { progress: 5 }),
 
-  setResearching: (projectId: string, step?: string) => 
-    updateProjectStatus(projectId, 'researching', STATUS_MESSAGES.RESEARCHING, { 
-      progress: 20, 
-      currentStep: step || 'Analyzing competitors' 
+  setResearching: (projectId: string, step?: string) =>
+    updateProjectStatus(projectId, 'researching', STATUS_MESSAGES.RESEARCHING, {
+      progress: 20,
+      currentStep: step || 'Analyzing competitors'
     }),
 
-  setBlueprintGenerating: (projectId: string) => 
+  setBlueprintGenerating: (projectId: string) =>
     updateProjectStatus(projectId, 'generating_blueprint', STATUS_MESSAGES.GENERATING_BLUEPRINT, { progress: 40 }),
 
-  setContentGenerating: (projectId: string, sectionName?: string) => 
-    updateProjectStatus(projectId, 'generating_content', STATUS_MESSAGES.GENERATING_CONTENT, { 
-      progress: 60, 
-      currentStep: sectionName ? `Writing: ${sectionName}` : 'Writing content' 
+  setContentGenerating: (projectId: string, sectionName?: string) =>
+    updateProjectStatus(projectId, 'generating_content', STATUS_MESSAGES.GENERATING_CONTENT, {
+      progress: 60,
+      currentStep: sectionName ? `Writing: ${sectionName}` : 'Writing content'
     }),
 
-  setFinalizing: (projectId: string) => 
+  setFinalizing: (projectId: string) =>
     updateProjectStatus(projectId, 'finalizing', STATUS_MESSAGES.FINALIZING, { progress: 85 }),
 
-  setCompleted: (projectId: string) => 
+  setCompleted: (projectId: string) =>
     updateProjectStatus(projectId, 'completed', STATUS_MESSAGES.COMPLETED, { progress: 100 }),
 
   // Stuck/throttled states
-  setRateLimitHit: (projectId: string, retryIn?: number) => 
-    updateProjectStatus(projectId, 'stuck', STATUS_MESSAGES.RATE_LIMIT_HIT, { 
-      estimatedTimeRemaining: retryIn || 60 
+  setRateLimitHit: (projectId: string, retryIn?: number) =>
+    updateProjectStatus(projectId, 'stuck', STATUS_MESSAGES.RATE_LIMIT_HIT, {
+      estimatedTimeRemaining: retryIn || 60
     }),
 
-  setAIThrottled: (projectId: string) => 
+  setAIThrottled: (projectId: string) =>
     updateProjectStatus(projectId, 'stuck', STATUS_MESSAGES.AI_THROTTLED),
 
-  setWaitingInQueue: (projectId: string, position?: number) => 
+  setWaitingInQueue: (projectId: string, position?: number) =>
     updateProjectStatus(projectId, 'stuck', STATUS_MESSAGES.WAITING_IN_QUEUE, {
       metadata: { queuePosition: position }
     }),
 
   // Error states
-  setAIError: (projectId: string, errorMessage: string) => 
+  setAIError: (projectId: string, errorMessage: string) =>
     updateProjectStatus(projectId, 'error', `${STATUS_MESSAGES.AI_ERROR} Error: ${errorMessage}`),
 
-  setPermanentError: (projectId: string, errorMessage: string) => 
+  setPermanentError: (projectId: string, errorMessage: string) =>
     updateProjectStatus(projectId, 'error', `${STATUS_MESSAGES.PERMANENT_ERROR} ${errorMessage}`),
 
   // Recovery states
-  setRetrying: (projectId: string, attempt: number) => 
+  setRetrying: (projectId: string, attempt: number) =>
     updateProjectStatus(projectId, 'stuck', `${STATUS_MESSAGES.RETRYING} (Attempt ${attempt})`),
 
-  setResuming: (projectId: string) => 
+  setResuming: (projectId: string) =>
     updateProjectStatus(projectId, 'researching', STATUS_MESSAGES.RESUMING),
 };

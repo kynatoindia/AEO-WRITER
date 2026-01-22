@@ -7,13 +7,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { 
-  Play, 
-  Pause, 
-  RefreshCw, 
-  CheckCircle, 
-  Clock, 
-  FileText, 
+import {
+  Play,
+  Pause,
+  RefreshCw,
+  CheckCircle,
+  Clock,
+  FileText,
   Zap,
   AlertCircle,
   Eye,
@@ -31,27 +31,34 @@ interface LiveWriterProps {
   onError?: (error: string) => void;
 }
 
-// Loading fallback component
+// Enhanced Loading fallback component
 function LiveWriterSkeleton() {
   return (
-    <div className="h-full flex gap-6">
+    <div className="h-full flex gap-6 p-6">
       {/* Sidebar skeleton */}
       <div className="w-80 space-y-4">
-        <Skeleton className="h-8 w-64" />
-        <Skeleton className="h-4 w-full" />
-        <Skeleton className="h-32 w-full" />
-        <div className="space-y-2">
-          {[1, 2, 3, 4].map(i => (
-            <Skeleton key={i} className="h-16 w-full" />
-          ))}
+        <div className="glass-card rounded-2xl p-4 border border-border">
+          <Skeleton className="h-6 w-48 mb-4" />
+          <Skeleton className="h-4 w-full mb-2" />
+          <Skeleton className="h-24 w-full mb-4" />
+          <div className="space-y-3">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="glass-card rounded-xl p-3 border border-border">
+                <Skeleton className="h-4 w-32 mb-2" />
+                <Skeleton className="h-3 w-full" />
+              </div>
+            ))}
+          </div>
         </div>
       </div>
-      
+
       {/* Content area skeleton */}
       <div className="flex-1 space-y-4">
-        <Skeleton className="h-8 w-96" />
-        <Skeleton className="h-4 w-full" />
-        <Skeleton className="h-96 w-full" />
+        <div className="glass-card rounded-3xl p-6 border border-border">
+          <Skeleton className="h-8 w-64 mb-4" />
+          <Skeleton className="h-4 w-full mb-6" />
+          <Skeleton className="h-96 w-full" />
+        </div>
       </div>
     </div>
   );
@@ -68,7 +75,7 @@ function LiveWriterContent({ projectId, onComplete, onError }: LiveWriterProps) 
   const [generatedContent, setGeneratedContent] = useState<Record<string, string>>({});
   const [isDemoRunning, setIsDemoRunning] = useState(false);
   const [demoContent, setDemoContent] = useState<Record<string, string>>({});
-  
+
   const {
     progress,
     isLoading,
@@ -83,7 +90,7 @@ function LiveWriterContent({ projectId, onComplete, onError }: LiveWriterProps) 
     estimatedTimeRemaining,
     clearError
   } = useContentGeneration({ projectId });
-  
+
   // Initialize current section when blueprint is available
   useEffect(() => {
     if (progress?.blueprint?.sections && !currentSectionId) {
@@ -97,7 +104,7 @@ function LiveWriterContent({ projectId, onComplete, onError }: LiveWriterProps) 
       }
     }
   }, [progress?.blueprint, currentSectionId, sectionProgress]);
-  
+
   // Update section progress from real-time events
   useEffect(() => {
     realtimeEvents.forEach(event => {
@@ -110,7 +117,7 @@ function LiveWriterContent({ projectId, onComplete, onError }: LiveWriterProps) 
             wordCount: data.wordCount || 0
           }
         }));
-        
+
         if (data.content) {
           setGeneratedContent(prev => ({
             ...prev,
@@ -120,7 +127,7 @@ function LiveWriterContent({ projectId, onComplete, onError }: LiveWriterProps) 
       }
     });
   }, [realtimeEvents]);
-  
+
   // Handle completion
   useEffect(() => {
     if (isCompleted && progress?.status === 'completed' && onComplete) {
@@ -129,20 +136,20 @@ function LiveWriterContent({ projectId, onComplete, onError }: LiveWriterProps) 
         .map(section => generatedContent[section.id] || '')
         .filter(content => content.length > 0)
         .join('\n\n');
-      
+
       if (fullContent) {
         onComplete(fullContent);
       }
     }
   }, [isCompleted, progress?.status, progress?.blueprint, generatedContent, onComplete]);
-  
+
   // Handle errors
   useEffect(() => {
     if (error && onError) {
       onError(error);
     }
   }, [error, onError]);
-  
+
   const handleStartGeneration = async () => {
     try {
       clearError();
@@ -161,10 +168,10 @@ function LiveWriterContent({ projectId, onComplete, onError }: LiveWriterProps) 
 
   const startDemoGeneration = async () => {
     if (isDemoRunning) return;
-    
+
     setIsDemoRunning(true);
     setDemoContent({});
-    
+
     // Reset section progress for demo
     setSectionProgress({
       'mock-1': { status: 'pending', wordCount: 0 },
@@ -172,32 +179,32 @@ function LiveWriterContent({ projectId, onComplete, onError }: LiveWriterProps) 
       'mock-3': { status: 'pending', wordCount: 0 },
       'mock-4': { status: 'pending', wordCount: 0 },
     });
-    
+
     try {
       const response = await fetch(`/api/projects/${projectId}/demo-stream`, {
         method: 'POST',
       });
-      
+
       if (!response.body) {
         throw new Error('No response body');
       }
-      
+
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-      
+
       while (true) {
         const { done, value } = await reader.read();
-        
+
         if (done) break;
-        
+
         const chunk = decoder.decode(value);
         const lines = chunk.split('\n');
-        
+
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             try {
               const data = JSON.parse(line.slice(6));
-              
+
               switch (data.type) {
                 case 'section_started':
                   setSectionProgress(prev => ({
@@ -206,14 +213,14 @@ function LiveWriterContent({ projectId, onComplete, onError }: LiveWriterProps) 
                   }));
                   setCurrentSectionId(data.data.sectionId);
                   break;
-                  
+
                 case 'content_chunk':
                   setDemoContent(prev => ({
                     ...prev,
                     [data.data.sectionId]: data.data.fullContent
                   }));
                   break;
-                  
+
                 case 'section_complete':
                   setSectionProgress(prev => ({
                     ...prev,
@@ -224,11 +231,11 @@ function LiveWriterContent({ projectId, onComplete, onError }: LiveWriterProps) 
                     [data.data.sectionId]: data.data.content
                   }));
                   break;
-                  
+
                 case 'generation_complete':
                   console.log('Demo generation completed!');
                   break;
-                  
+
                 case 'error':
                   console.error('Demo error:', data.data.error);
                   break;
@@ -245,7 +252,7 @@ function LiveWriterContent({ projectId, onComplete, onError }: LiveWriterProps) 
       setIsDemoRunning(false);
     }
   };
-  
+
   const handleSectionComplete = (sectionId: string, content: string) => {
     setSectionProgress(prev => ({
       ...prev,
@@ -254,25 +261,25 @@ function LiveWriterContent({ projectId, onComplete, onError }: LiveWriterProps) 
         wordCount: content.split(' ').length
       }
     }));
-    
+
     setGeneratedContent(prev => ({
       ...prev,
       [sectionId]: content
     }));
-    
+
     // Auto-advance to next pending section
     if (progress?.blueprint?.sections) {
       const currentIndex = progress.blueprint.sections.findIndex(s => s.id === sectionId);
       const nextSection = progress.blueprint.sections
         .slice(currentIndex + 1)
         .find(section => !sectionProgress[section.id] || sectionProgress[section.id].status === 'pending');
-      
+
       if (nextSection) {
         setCurrentSectionId(nextSection.id);
       }
     }
   };
-  
+
   const handleSectionError = (sectionId: string, error: string) => {
     setSectionProgress(prev => ({
       ...prev,
@@ -282,21 +289,21 @@ function LiveWriterContent({ projectId, onComplete, onError }: LiveWriterProps) 
       }
     }));
   };
-  
+
   const formatTime = (seconds: number) => {
     const minutes = Math.floor(seconds / 60);
     const remainingSeconds = seconds % 60;
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
-  
+
   const getCurrentSection = () => {
     if (!progress?.blueprint?.sections || !currentSectionId) return null;
     return progress.blueprint.sections.find(s => s.id === currentSectionId);
   };
-  
+
   const getPreviousContent = () => {
     if (!progress?.blueprint?.sections || !currentSectionId) return '';
-    
+
     const currentIndex = progress.blueprint.sections.findIndex(s => s.id === currentSectionId);
     return progress.blueprint.sections
       .slice(0, currentIndex)
@@ -304,26 +311,28 @@ function LiveWriterContent({ projectId, onComplete, onError }: LiveWriterProps) 
       .filter(content => content.length > 0)
       .join('\n\n');
   };
-  
+
   if (isLoading && !progress) {
     return <LiveWriterSkeleton />;
   }
-  
+
   return (
-    <div className={`h-full flex flex-col ${isFullscreen ? 'fixed inset-0 z-50 bg-white' : ''}`}>
-      {/* Header */}
-      <div className="flex items-center justify-between p-6 border-b bg-white">
+    <div className={`h-full flex flex-col ${isFullscreen ? 'fixed inset-0 z-50 bg-background' : ''}`}>
+      {/* Enhanced Header */}
+      <div className="flex items-center justify-between p-6 border-b border-border glass-card backdrop-blur-xl">
         <div>
-          <h2 className="text-2xl font-bold flex items-center gap-2">
-            <Zap className="h-6 w-6 text-blue-500" />
-            Live Content Generation
+          <h2 className="text-2xl font-bold flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-gradient-to-br from-primary/20 to-purple-600/10 border border-border">
+              <Zap className="h-6 w-6 text-primary animate-pulse" />
+            </div>
+            <span className="text-gradient-primary">Live Content Generation</span>
           </h2>
-          <p className="text-muted-foreground">
+          <p className="text-muted-foreground mt-1">
             Watch your content being created in real-time with AI streaming
           </p>
         </div>
-        
-        <div className="flex items-center gap-2">
+
+        <div className="flex items-center gap-3">
           {/* Demo button for development */}
           {process.env.NODE_ENV === 'development' && (
             <Button
@@ -331,36 +340,38 @@ function LiveWriterContent({ projectId, onComplete, onError }: LiveWriterProps) 
               size="sm"
               onClick={startDemoGeneration}
               disabled={isDemoRunning}
-              className="bg-green-600 hover:bg-green-700"
+              className="bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600 rounded-xl hover-lift"
             >
               {isDemoRunning ? (
                 <>
-                  <Pause className="h-4 w-4 mr-1" />
+                  <Pause className="h-4 w-4 mr-2" />
                   Demo Running...
                 </>
               ) : (
                 <>
-                  <Play className="h-4 w-4 mr-1" />
+                  <Play className="h-4 w-4 mr-2" />
                   Demo Content Stream
                 </>
               )}
             </Button>
           )}
-          
+
           <Button
             variant="outline"
             size="sm"
             onClick={refreshProgress}
             disabled={isLoading}
+            className="glass-card border-border hover:bg-surface-1 rounded-xl"
           >
             <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
-          
+
           <Button
             variant="outline"
             size="sm"
             onClick={() => setIsFullscreen(!isFullscreen)}
+            className="glass-card border-border hover:bg-surface-1 rounded-xl"
           >
             {isFullscreen ? (
               <Minimize2 className="h-4 w-4" />
@@ -370,99 +381,120 @@ function LiveWriterContent({ projectId, onComplete, onError }: LiveWriterProps) 
           </Button>
         </div>
       </div>
-      
-      {/* Error Display */}
+
+      {/* Enhanced Error Display */}
       {error && (
         <div className="mx-6 mt-4">
-          <Card className="border-red-200 bg-red-50">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-2 text-red-700">
-                <AlertCircle className="h-4 w-4" />
-                <span className="font-medium">Error:</span>
-                <span>{error}</span>
+          <div className="glass-card border border-destructive/20 bg-gradient-to-r from-destructive/10 to-red-500/5 rounded-2xl p-6">
+            <div className="flex items-center gap-3 text-destructive">
+              <div className="p-2 rounded-xl bg-destructive/20 border border-destructive/30">
+                <AlertCircle className="h-5 w-5" />
               </div>
-            </CardContent>
-          </Card>
+              <div>
+                <span className="font-semibold">Generation Error</span>
+                <p className="text-sm mt-1 text-destructive/80">{error}</p>
+              </div>
+            </div>
+          </div>
         </div>
       )}
-      
-      {/* Generation Controls */}
+
+      {/* Enhanced Generation Controls */}
       {!isGenerating && !isCompleted && !progress?.blueprint && (
         <div className="mx-6 mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Start Content Generation</CardTitle>
-              <CardDescription>
+          <div className="glass-card rounded-3xl border border-border p-8 text-center relative overflow-hidden">
+            {/* Background Pattern */}
+            <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-purple-600/5 opacity-50" />
+
+            <div className="relative z-10">
+              <div className="w-16 h-16 bg-gradient-to-br from-primary/20 to-purple-600/10 rounded-full flex items-center justify-center mx-auto mb-6 border border-border">
+                <Play className="w-8 h-8 text-primary" />
+              </div>
+              <h3 className="text-2xl font-bold mb-2 text-gradient">Start Content Generation</h3>
+              <p className="text-muted-foreground mb-8">
                 Begin the AI-powered content generation process
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button 
+              </p>
+              <Button
                 onClick={handleStartGeneration}
                 disabled={isLoading}
-                className="w-full"
+                className="auth-button px-8 rounded-2xl hover-lift"
               >
                 <Play className="h-4 w-4 mr-2" />
                 Start Generation
               </Button>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </div>
       )}
-      
-      {/* Progress Overview */}
+
+      {/* Enhanced Progress Overview */}
       {progress && (
         <div className="mx-6 mt-4">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <FileText className="h-5 w-5" />
-                  <CardTitle className="capitalize">{progress.status}</CardTitle>
-                  <Badge variant="secondary">
-                    {progressPercentage}%
-                  </Badge>
-                </div>
-                
-                {estimatedTimeRemaining > 0 && (
-                  <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                    <Clock className="h-4 w-4" />
-                    {formatTime(estimatedTimeRemaining)} remaining
+          <div className="glass-card rounded-3xl border border-border p-6 relative overflow-hidden">
+            {/* Background Gradient */}
+            <div className="absolute inset-0 bg-gradient-to-r from-primary/5 via-transparent to-purple-600/5 opacity-30" />
+
+            <div className="relative z-10">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-gradient-to-br from-primary/20 to-purple-600/10 border border-border">
+                    <FileText className="h-5 w-5 text-primary" />
                   </div>
-                )}
+                  <div>
+                    <h3 className="text-xl font-bold text-gradient capitalize">{progress.status}</h3>
+                    <div className="flex items-center gap-2 mt-1">
+                      <div className="px-3 py-1 rounded-full bg-primary/20 border border-primary/30">
+                        <span className="text-sm font-semibold text-primary">{progressPercentage}%</span>
+                      </div>
+                      {estimatedTimeRemaining > 0 && (
+                        <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                          <Clock className="h-4 w-4" />
+                          {formatTime(estimatedTimeRemaining)} remaining
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
-            </CardHeader>
-            
-            <CardContent>
-              <Progress value={progressPercentage} className="w-full mb-4" />
-              
-              <div className="grid grid-cols-3 gap-4 text-center">
-                <div>
-                  <div className="text-2xl font-bold text-green-600">
+
+              <div className="mb-6">
+                <div className="w-full bg-surface-2 rounded-full h-3 overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-primary to-purple-600 rounded-full transition-all duration-500 ease-out relative"
+                    style={{ width: `${progressPercentage}%` }}
+                  >
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-6">
+                <div className="text-center p-4 rounded-2xl bg-gradient-to-br from-green-500/10 to-emerald-500/5 border border-green-500/20">
+                  <div className="text-3xl font-bold text-green-400 mb-1">
                     {progress.completedSections}
                   </div>
-                  <div className="text-sm text-muted-foreground">Completed</div>
+                  <div className="text-sm text-green-300/80">Completed</div>
                 </div>
-                
-                <div>
-                  <div className="text-2xl font-bold text-blue-600">
+
+                <div className="text-center p-4 rounded-2xl bg-gradient-to-br from-primary/10 to-blue-500/5 border border-primary/20">
+                  <div className="text-3xl font-bold text-primary mb-1">
                     {progress.writingSections}
                   </div>
-                  <div className="text-sm text-muted-foreground">Writing</div>
+                  <div className="text-sm text-primary/80">Writing</div>
                 </div>
-                
-                <div>
-                  <div className="text-2xl font-bold text-gray-600">
+
+                <div className="text-center p-4 rounded-2xl bg-gradient-to-br from-muted/20 to-muted/10 border border-muted/30">
+                  <div className="text-3xl font-bold text-muted-foreground mb-1">
                     {progress.sectionsRemaining}
                   </div>
-                  <div className="text-sm text-muted-foreground">Remaining</div>
+                  <div className="text-sm text-muted-foreground/80">Remaining</div>
                 </div>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </div>
       )}
-      
+
       {/* Main Content Area */}
       {progress?.blueprint && (
         <div className="flex-1 flex gap-6 p-6 min-h-0">
@@ -476,33 +508,43 @@ function LiveWriterContent({ projectId, onComplete, onError }: LiveWriterProps) 
               className="h-full"
             />
           </div>
-          
+
           {/* Streaming Content Display */}
           <div className="flex-1 min-w-0">
             {getCurrentSection() ? (
               <div className="h-full">
                 {isDemoRunning && currentSectionId && demoContent[currentSectionId] ? (
-                  <Card className="h-full">
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <Zap className="h-5 w-5 text-blue-500 animate-pulse" />
-                        {getCurrentSection()?.heading}
-                        <Badge variant="secondary" className="animate-pulse">
-                          {sectionProgress[currentSectionId]?.status === 'writing' ? 'Writing...' : 'Completed'}
-                        </Badge>
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="h-full overflow-auto">
-                      <div className="prose max-w-none">
-                        <div className="whitespace-pre-wrap font-mono text-sm leading-relaxed">
-                          {demoContent[currentSectionId]}
-                          {sectionProgress[currentSectionId]?.status === 'writing' && (
-                            <span className="inline-block w-2 h-5 bg-blue-500 animate-pulse ml-1"></span>
-                          )}
+                  <div className="glass-card rounded-3xl border border-border h-full relative overflow-hidden">
+                    {/* Background Pattern */}
+                    <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-purple-600/5 opacity-30" />
+
+                    <div className="relative z-10 h-full flex flex-col">
+                      <div className="p-6 border-b border-border">
+                        <div className="flex items-center gap-3 mb-2">
+                          <div className="p-2 rounded-xl bg-gradient-to-br from-primary/20 to-blue-500/10 border border-border">
+                            <Zap className="h-5 w-5 text-primary animate-pulse" />
+                          </div>
+                          <h3 className="text-xl font-bold text-gradient">{getCurrentSection()?.heading}</h3>
+                          <div className="px-3 py-1 rounded-full bg-primary/20 border border-primary/30">
+                            <span className="text-sm font-semibold text-primary animate-pulse">
+                              {sectionProgress[currentSectionId]?.status === 'writing' ? 'Writing...' : 'Completed'}
+                            </span>
+                          </div>
                         </div>
                       </div>
-                    </CardContent>
-                  </Card>
+
+                      <div className="flex-1 p-6 overflow-auto">
+                        <div className="prose prose-invert max-w-none">
+                          <div className="whitespace-pre-wrap text-foreground leading-relaxed">
+                            {demoContent[currentSectionId]}
+                            {sectionProgress[currentSectionId]?.status === 'writing' && (
+                              <span className="inline-block w-2 h-5 bg-primary animate-pulse ml-1 rounded-sm"></span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 ) : (
                   <StreamingContentDisplay
                     projectId={projectId}
@@ -516,23 +558,28 @@ function LiveWriterContent({ projectId, onComplete, onError }: LiveWriterProps) 
                 )}
               </div>
             ) : (
-              <Card className="h-full flex items-center justify-center">
-                <CardContent>
-                  <div className="text-center text-muted-foreground">
-                    <Layout className="h-12 w-12 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium mb-2">Select a Section</h3>
-                    <p>Choose a section from the blueprint to start writing</p>
-                    {process.env.NODE_ENV === 'development' && (
-                      <div className="mt-4">
-                        <Button onClick={startDemoGeneration} disabled={isDemoRunning}>
-                          <Play className="h-4 w-4 mr-2" />
-                          Try Demo Content Generation
-                        </Button>
-                      </div>
-                    )}
+              <div className="glass-card rounded-3xl border border-border h-full flex items-center justify-center relative overflow-hidden">
+                {/* Background Pattern */}
+                <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-purple-600/5 opacity-30" />
+
+                <div className="relative z-10 text-center text-muted-foreground">
+                  <div className="w-16 h-16 bg-gradient-to-br from-muted/20 to-muted/10 rounded-full flex items-center justify-center mx-auto mb-6 border border-border">
+                    <Layout className="h-8 w-8 text-muted-foreground" />
                   </div>
-                </CardContent>
-              </Card>
+                  <h3 className="text-xl font-semibold mb-2 text-gradient">Select a Section</h3>
+                  <p className="text-muted-foreground mb-6">Choose a section from the blueprint to start writing</p>
+                  {process.env.NODE_ENV === 'development' && (
+                    <Button
+                      onClick={startDemoGeneration}
+                      disabled={isDemoRunning}
+                      className="auth-button px-6 rounded-2xl hover-lift"
+                    >
+                      <Play className="h-4 w-4 mr-2" />
+                      Try Demo Content Generation
+                    </Button>
+                  )}
+                </div>
+              </div>
             )}
           </div>
         </div>
@@ -544,7 +591,7 @@ function LiveWriterContent({ projectId, onComplete, onError }: LiveWriterProps) 
 export function LiveWriter({ projectId, onComplete, onError }: LiveWriterProps) {
   return (
     <Suspense fallback={<LiveWriterSkeleton />}>
-      <LiveWriterContent 
+      <LiveWriterContent
         projectId={projectId}
         onComplete={onComplete}
         onError={onError}

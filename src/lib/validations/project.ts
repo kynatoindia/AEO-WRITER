@@ -64,6 +64,7 @@ export const blueprintSchema = z.object({
 
 // Research request validation schema - AI handles competitor discovery
 export const researchRequestSchema = z.object({
+  competitorUrls: z.array(z.string().url()).max(5).optional(),
   brandDocument: z.string().optional()
 });
 

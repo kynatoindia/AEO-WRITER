@@ -31,6 +31,14 @@ export interface Project {
   seo_metadata?: SEOMetadata;
   token_usage?: TokenUsage;
   cost_breakdown?: CostBreakdown;
+  status_message?: string;
+  progress?: number;
+  current_step?: string;
+  estimated_completion_time?: string;
+  current_section?: string;
+  progress_percentage?: number;
+  steps?: any[];
+  error_message?: string;
   created_at: string;
   updated_at: string;
 }

@@ -20,26 +20,26 @@ const ModularResearchRequestSchema = z.object({
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const projectId = params.id;
-    
+    const { id: projectId } = await params;
+
     // Parse and validate request body
     const body = await request.json();
     const validatedData = ModularResearchRequestSchema.parse(body);
-    
+
     // Get authenticated user
     const supabase = await createRouteClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
+
     if (authError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
       );
     }
-    
+
     // Verify project ownership
     const { data: project, error: projectError } = await supabase
       .from('projects')
@@ -47,14 +47,14 @@ export async function POST(
       .eq('id', projectId)
       .eq('user_id', user.id)
       .single();
-    
+
     if (projectError || !project) {
       return NextResponse.json(
         { error: 'Project not found' },
         { status: 404 }
       );
     }
-    
+
     // Check if project is in correct state for research
     if (project.status !== 'created' && project.status !== 'planning') {
       return NextResponse.json(
@@ -62,13 +62,13 @@ export async function POST(
         { status: 400 }
       );
     }
-    
+
     // Check user quota for research operations
     const quotaCheck = await checkQuota(user.id, 'free', 'research'); // Get actual plan from DB
-    
+
     if (!quotaCheck.allowed) {
       return NextResponse.json(
-        { 
+        {
           error: 'Research quota exceeded',
           usage: quotaCheck.usage,
           limit: quotaCheck.limit,
@@ -77,7 +77,7 @@ export async function POST(
         { status: 429 }
       );
     }
-    
+
     // Update project status to researching
     const { error: updateError } = await supabase
       .from('projects')
@@ -86,7 +86,7 @@ export async function POST(
         updated_at: new Date().toISOString()
       })
       .eq('id', projectId);
-    
+
     if (updateError) {
       console.error('Failed to update project status:', updateError);
       return NextResponse.json(
@@ -94,7 +94,7 @@ export async function POST(
         { status: 500 }
       );
     }
-    
+
     // Trigger Modular Agentic Research Pipeline
     const researchEvent = await inngest.send({
       name: 'project/modular-research-started',
@@ -110,9 +110,9 @@ export async function POST(
         timestamp: Date.now()
       }
     });
-    
+
     console.log(`Triggered Modular Agentic Research Pipeline for project ${projectId}`);
-    
+
     return NextResponse.json({
       success: true,
       message: 'Modular Agentic Research Pipeline started',
@@ -128,20 +128,20 @@ export async function POST(
       },
       estimatedTime: '3-5 minutes'
     });
-    
+
   } catch (error) {
     console.error('Modular research pipeline error:', error);
-    
+
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { 
+        {
           error: 'Invalid request data',
           details: error.errors
         },
         { status: 400 }
       );
     }
-    
+
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
@@ -155,22 +155,22 @@ export async function POST(
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const projectId = params.id;
-    
+    const { id: projectId } = await params;
+
     // Get authenticated user
     const supabase = await createRouteClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
+
     if (authError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
       );
     }
-    
+
     // Get project with research data
     const { data: project, error: projectError } = await supabase
       .from('projects')
@@ -178,18 +178,18 @@ export async function GET(
       .eq('id', projectId)
       .eq('user_id', user.id)
       .single();
-    
+
     if (projectError || !project) {
       return NextResponse.json(
         { error: 'Project not found' },
         { status: 404 }
       );
     }
-    
+
     // Check if modular research data exists
     const researchData = project.research_data as any;
     const isModularResearch = researchData?.competitorDiscovery && researchData?.factVault;
-    
+
     if (!isModularResearch) {
       return NextResponse.json({
         success: false,
@@ -200,7 +200,7 @@ export async function GET(
         isModularResearch: false
       });
     }
-    
+
     // Return modular research status and metrics
     return NextResponse.json({
       success: true,
@@ -243,10 +243,10 @@ export async function GET(
       },
       lastUpdated: project.updated_at
     });
-    
+
   } catch (error) {
     console.error('Get modular research status error:', error);
-    
+
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

@@ -14,7 +14,8 @@ import {
   Check,
   Zap,
   FileText,
-  Clock
+  Clock,
+  AlertCircle
 } from 'lucide-react';
 import { useStreamingContent } from '@/lib/hooks/use-streaming-content';
 import type { ContentSection } from '@/lib/types';
@@ -133,10 +134,10 @@ export function StreamingContentDisplay({
   };
   
   const getStatusColor = () => {
-    if (error) return 'bg-red-500';
-    if (isComplete) return 'bg-green-500';
-    if (isStreaming) return 'bg-blue-500';
-    return 'bg-gray-500';
+    if (error) return 'text-destructive';
+    if (isComplete) return 'text-green-400';
+    if (isStreaming) return 'text-primary';
+    return 'text-muted-foreground';
   };
   
   const getStatusText = () => {
@@ -154,177 +155,218 @@ export function StreamingContentDisplay({
   };
   
   return (
-    <Card className="h-full flex flex-col">
-      <CardHeader className="flex-shrink-0">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <CardTitle className="text-lg">{section.heading}</CardTitle>
-            <Badge 
-              variant="secondary" 
-              className={`${getStatusColor()} text-white`}
-            >
-              <div className="flex items-center gap-1">
-                {getStatusIcon()}
-                {getStatusText()}
+    <div className="glass-card rounded-3xl border border-border h-full flex flex-col relative overflow-hidden">
+      {/* Background Pattern */}
+      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-purple-600/5 opacity-30" />
+      
+      <div className="relative z-10 h-full flex flex-col">
+        <div className="flex-shrink-0 p-6 border-b border-border">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-gradient-to-br from-primary/20 to-purple-600/10 border border-border">
+                <div className={`w-5 h-5 ${getStatusColor()} rounded-lg flex items-center justify-center`}>
+                  {getStatusIcon()}
+                </div>
               </div>
-            </Badge>
+              <div>
+                <h3 className="text-xl font-bold text-gradient">{section.heading}</h3>
+                <div className="flex items-center gap-2 mt-1">
+                  <div className={`px-3 py-1 rounded-full border ${
+                    error ? 'bg-destructive/20 border-destructive/30 text-destructive' :
+                    isComplete ? 'bg-green-500/20 border-green-500/30 text-green-400' :
+                    isStreaming ? 'bg-primary/20 border-primary/30 text-primary' :
+                    'bg-muted/20 border-muted/30 text-muted-foreground'
+                  }`}>
+                    <span className="text-sm font-semibold">{getStatusText()}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-3 text-sm text-muted-foreground">
+              {wordCount > 0 && (
+                <div className="flex items-center gap-1">
+                  <FileText className="h-4 w-4" />
+                  {wordCount} words
+                </div>
+              )}
+              
+              {tokensUsed > 0 && (
+                <div className="flex items-center gap-1">
+                  <Zap className="h-4 w-4" />
+                  {tokensUsed} tokens
+                </div>
+              )}
+            </div>
           </div>
           
-          <div className="flex items-center gap-2">
-            {wordCount > 0 && (
-              <div className="text-sm text-muted-foreground">
-                {wordCount} words
+          {section.goal && (
+            <p className="text-sm text-muted-foreground mt-3 p-3 rounded-xl bg-surface-1 border border-border">
+              <span className="font-medium">Goal:</span> {section.goal}
+            </p>
+          )}
+          
+          {/* Enhanced Progress bar for streaming */}
+          {isStreaming && (
+            <div className="mt-4">
+              <div className="w-full bg-surface-2 rounded-full h-2 overflow-hidden">
+                <div className="h-full bg-gradient-to-r from-primary to-purple-600 rounded-full animate-pulse" />
               </div>
+              <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
+                <Clock className="h-3 w-3" />
+                <span className="animate-pulse">Generating content...</span>
+              </div>
+            </div>
+          )}
+        </div>
+        
+        <div className="flex-1 flex flex-col p-6">
+          {/* Enhanced Control buttons */}
+          <div className="flex items-center gap-3 mb-6">
+            {!isStreaming && !isComplete && (
+              <Button 
+                onClick={handleStartStreaming}
+                size="sm"
+                className="auth-button px-6 rounded-xl hover-lift"
+              >
+                <Play className="h-4 w-4 mr-2" />
+                Start Writing
+              </Button>
             )}
             
-            {tokensUsed > 0 && (
-              <div className="text-sm text-muted-foreground">
-                {tokensUsed} tokens
-              </div>
+            {isStreaming && (
+              <Button 
+                onClick={cancelStream}
+                size="sm"
+                variant="destructive"
+                className="px-6 rounded-xl hover-lift"
+              >
+                <Square className="h-4 w-4 mr-2" />
+                Stop
+              </Button>
+            )}
+            
+            {(isComplete || error) && (
+              <Button 
+                onClick={handleStartStreaming}
+                size="sm"
+                variant="outline"
+                className="glass-card border-border hover:bg-surface-1 px-6 rounded-xl"
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Regenerate
+              </Button>
+            )}
+            
+            {content && (
+              <Button 
+                onClick={handleCopyContent}
+                size="sm"
+                variant="outline"
+                className="glass-card border-border hover:bg-surface-1 px-6 rounded-xl"
+              >
+                {copied ? (
+                  <>
+                    <Check className="h-4 w-4 mr-2" />
+                    Copied
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-4 w-4 mr-2" />
+                    Copy
+                  </>
+                )}
+              </Button>
             )}
           </div>
-        </div>
-        
-        {section.goal && (
-          <p className="text-sm text-muted-foreground mt-2">
-            Goal: {section.goal}
-          </p>
-        )}
-        
-        {/* Progress bar for streaming */}
-        {isStreaming && (
-          <div className="mt-3">
-            <Progress value={undefined} className="w-full animate-pulse" />
-            <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
-              <Clock className="h-3 w-3" />
-              Generating content...
-            </div>
-          </div>
-        )}
-      </CardHeader>
-      
-      <CardContent className="flex-1 flex flex-col">
-        {/* Control buttons */}
-        <div className="flex items-center gap-2 mb-4">
-          {!isStreaming && !isComplete && (
-            <Button 
-              onClick={handleStartStreaming}
-              size="sm"
-              className="flex items-center gap-2"
-            >
-              <Play className="h-4 w-4" />
-              Start Writing
-            </Button>
-          )}
           
-          {isStreaming && (
-            <Button 
-              onClick={cancelStream}
-              size="sm"
-              variant="destructive"
-              className="flex items-center gap-2"
-            >
-              <Square className="h-4 w-4" />
-              Stop
-            </Button>
-          )}
-          
-          {(isComplete || error) && (
-            <Button 
-              onClick={handleStartStreaming}
-              size="sm"
-              variant="outline"
-              className="flex items-center gap-2"
-            >
-              <RefreshCw className="h-4 w-4" />
-              Regenerate
-            </Button>
-          )}
-          
-          {content && (
-            <Button 
-              onClick={handleCopyContent}
-              size="sm"
-              variant="outline"
-              className="flex items-center gap-2"
-            >
-              {copied ? (
-                <>
-                  <Check className="h-4 w-4" />
-                  Copied
-                </>
-              ) : (
-                <>
-                  <Copy className="h-4 w-4" />
-                  Copy
-                </>
-              )}
-            </Button>
-          )}
-        </div>
-        
-        {/* Error display */}
-        {error && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
-            <div className="text-red-700 font-medium">Error generating content</div>
-            <div className="text-red-600 text-sm mt-1">{error}</div>
-          </div>
-        )}
-        
-        {/* Content display */}
-        <div 
-          ref={contentRef}
-          className="flex-1 overflow-y-auto border rounded-lg p-4 bg-gray-50"
-          onScroll={handleScroll}
-        >
-          {content ? (
-            <div 
-              className="prose prose-sm max-w-none"
-              dangerouslySetInnerHTML={{ 
-                __html: formatContent(content) 
-              }}
-            />
-          ) : (
-            <div className="text-muted-foreground text-center py-8">
-              {isStreaming ? (
-                <div className="flex items-center justify-center gap-2">
-                  <Zap className="h-5 w-5 animate-pulse" />
-                  Content will appear here as it's being generated...
+          {/* Enhanced Error display */}
+          {error && (
+            <div className="glass-card border border-destructive/20 bg-gradient-to-r from-destructive/10 to-red-500/5 rounded-2xl p-4 mb-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-xl bg-destructive/20 border border-destructive/30">
+                  <AlertCircle className="h-4 w-4 text-destructive" />
                 </div>
-              ) : (
-                <div className="flex items-center justify-center gap-2">
-                  <FileText className="h-5 w-5" />
-                  Click "Start Writing" to generate content for this section
+                <div>
+                  <div className="text-destructive font-semibold">Error generating content</div>
+                  <div className="text-destructive/80 text-sm mt-1">{error}</div>
                 </div>
-              )}
+              </div>
             </div>
           )}
           
-          {/* Streaming cursor */}
-          {isStreaming && content && (
-            <span className="inline-block w-2 h-5 bg-blue-500 animate-pulse ml-1" />
+          {/* Enhanced Content display */}
+          <div 
+            ref={contentRef}
+            className="flex-1 overflow-y-auto glass-card border border-border rounded-2xl p-6 relative"
+            onScroll={handleScroll}
+          >
+            {/* Background Pattern */}
+            <div className="absolute inset-0 bg-gradient-to-br from-surface-1/50 via-transparent to-surface-2/30 opacity-50 rounded-2xl" />
+            
+            <div className="relative z-10">
+              {content ? (
+                <div className="prose prose-invert max-w-none">
+                  <div 
+                    className="text-foreground leading-relaxed"
+                    dangerouslySetInnerHTML={{ 
+                      __html: formatContent(content) 
+                    }}
+                  />
+                </div>
+              ) : (
+                <div className="text-muted-foreground text-center py-12">
+                  {isStreaming ? (
+                    <div className="flex flex-col items-center gap-4">
+                      <div className="p-4 rounded-full bg-primary/20 border border-primary/30">
+                        <Zap className="h-8 w-8 text-primary animate-pulse" />
+                      </div>
+                      <div>
+                        <h4 className="text-lg font-semibold text-gradient mb-2">AI is Writing...</h4>
+                        <p>Content will appear here as it's being generated</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-4">
+                      <div className="p-4 rounded-full bg-muted/20 border border-muted/30">
+                        <FileText className="h-8 w-8 text-muted-foreground" />
+                      </div>
+                      <div>
+                        <h4 className="text-lg font-semibold text-gradient mb-2">Ready to Generate</h4>
+                        <p>Click "Start Writing" to generate content for this section</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {/* Enhanced Streaming cursor */}
+              {isStreaming && content && (
+                <span className="inline-block w-2 h-5 bg-primary animate-pulse ml-1 rounded-sm" />
+              )}
+            </div>
+          </div>
+          
+          {/* Enhanced Auto-scroll indicator */}
+          {!isAutoScrolling && isStreaming && (
+            <div className="mt-4 text-center">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setIsAutoScrolling(true);
+                  if (contentRef.current) {
+                    contentRef.current.scrollTop = contentRef.current.scrollHeight;
+                  }
+                }}
+                className="glass-card border-border hover:bg-surface-1 text-xs px-4 rounded-xl"
+              >
+                Scroll to bottom
+              </Button>
+            </div>
           )}
         </div>
-        
-        {/* Auto-scroll indicator */}
-        {!isAutoScrolling && isStreaming && (
-          <div className="mt-2 text-center">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                setIsAutoScrolling(true);
-                if (contentRef.current) {
-                  contentRef.current.scrollTop = contentRef.current.scrollHeight;
-                }
-              }}
-              className="text-xs"
-            >
-              Scroll to bottom
-            </Button>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

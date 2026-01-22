@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from './use-auth';
-import { createClientSupabaseClient } from '@/lib/supabase/client';
+import { createClient } from '@/lib/supabase/client';
 import { UserQuotas } from './use-quota';
 
 export interface RealtimeQuotaUpdate {
@@ -21,7 +21,7 @@ export function useRealtimeQuota() {
   useEffect(() => {
     if (!user) return;
 
-    const supabase = createClientSupabaseClient();
+    const supabase = createClient();
     
     // Subscribe to user profile changes for quota updates
     const profileChannel = supabase

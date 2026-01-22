@@ -1,5 +1,5 @@
 import { createServerSupabaseClient } from './server';
-import { createClientSupabaseClient } from './client';
+import { createClient } from './client';
 
 // Simple database service focused on authentication
 export class DatabaseService {
@@ -9,7 +9,7 @@ export class DatabaseService {
 
 // Client-side database operations (for client components)
 export class ClientDatabaseService {
-  private supabase = createClientSupabaseClient();
+  private supabase = createClient();
 
   // Auth helpers
   async getCurrentUser() {

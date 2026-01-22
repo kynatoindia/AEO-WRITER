@@ -4,10 +4,10 @@ import { atomicFactsExtractor } from '@/lib/services/atomic-facts-extractor';
 import { generateAIText, streamAIText, generateStructuredOutput } from '@/lib/ai/gateway';
 import { createRouteClient } from '@/lib/supabase/server';
 import { z } from 'zod';
-import type { 
-  ContentBlueprint, 
-  ContentSection, 
-  SEOMetadata, 
+import type {
+  ContentBlueprint,
+  ContentSection,
+  SEOMetadata,
   Project
 } from '@/lib/types';
 
@@ -71,36 +71,36 @@ export const generateFactBasedContentStrategy = inngest.createFunction(
   { event: 'content/fact-based-strategy-generate' },
   async ({ event, step }) => {
     const { userId, projectId, researchData, topic, tone, format } = event.data;
-    
+
     const idempotencyKey = generateIdempotencyKey.blueprint(userId, projectId);
-    
+
     // Check for duplicate strategy requests
     const duplicateCheck = await step.run('check-duplicate-strategy', async () => {
       const existingResult = await redis.get(`idempotency:${idempotencyKey}`);
       return existingResult ? JSON.parse(existingResult as string) : null;
     });
-    
+
     if (duplicateCheck) {
       console.log(`Duplicate strategy request detected for ${idempotencyKey}`);
       return duplicateCheck;
     }
-    
+
     // Get project data
     const projectData = await step.run('fetch-project-data', async () => {
       const supabase = await createRouteClient();
-      
+
       const { data: project, error } = await supabase
         .from('projects')
         .select('*')
         .eq('id', projectId)
         .eq('user_id', userId)
         .single();
-      
+
       if (error || !project) {
         throw new Error(`Project not found: ${error?.message}`);
       }
-      
-      return project as Project;
+
+      return project as unknown as Project;
     });
 
     // Extract atomic facts from research data
@@ -165,14 +165,14 @@ export const generateFactBasedContentStrategy = inngest.createFunction(
         
         Generate a detailed content blueprint that maps atomic facts to sections for maximum impact.
       `;
-      
+
       const result = await generateStructuredOutput(
         strategyPrompt,
         FactBasedBlueprintSchema,
         'blueprint',
         userId
       );
-      
+
       return result.object;
     });
 
@@ -213,11 +213,11 @@ export const generateFactBasedContentStrategy = inngest.createFunction(
         }
       };
     });
-    
+
     // Store blueprint and create content sections
     await step.run('store-fact-based-blueprint', async () => {
       const supabase = await createRouteClient();
-      
+
       // Update project with fact-based blueprint
       const { error: projectError } = await supabase
         .from('projects')
@@ -228,11 +228,11 @@ export const generateFactBasedContentStrategy = inngest.createFunction(
         })
         .eq('id', projectId)
         .eq('user_id', userId);
-      
+
       if (projectError) {
         throw new Error(`Failed to update project: ${projectError.message}`);
       }
-      
+
       // Create content sections with fact mapping
       const sectionsToInsert = optimizedBlueprint.sections.map(section => ({
         project_id: projectId,
@@ -244,15 +244,15 @@ export const generateFactBasedContentStrategy = inngest.createFunction(
         fact_requirements: section.factRequirements,
         status: 'pending' as const
       }));
-      
+
       const { error: sectionsError } = await supabase
         .from('content_sections')
         .insert(sectionsToInsert);
-      
+
       if (sectionsError) {
         throw new Error(`Failed to create sections: ${sectionsError.message}`);
       }
-      
+
       // Send real-time update
       await supabase
         .channel(`project:${projectId}`)
@@ -268,7 +268,7 @@ export const generateFactBasedContentStrategy = inngest.createFunction(
           }
         });
     });
-    
+
     // Fan-out: Trigger parallel fact-based content generation
     await step.run('trigger-fact-based-section-generation', async () => {
       const fanOutEvents = optimizedBlueprint.sections.map(section => ({
@@ -283,12 +283,12 @@ export const generateFactBasedContentStrategy = inngest.createFunction(
           priority: 'high' as const
         }
       }));
-      
+
       await inngest.send(fanOutEvents);
-      
+
       console.log(`Triggered ${fanOutEvents.length} fact-based section generation jobs for project ${projectId}`);
     });
-    
+
     const result = {
       success: true,
       blueprint: optimizedBlueprint,
@@ -299,10 +299,10 @@ export const generateFactBasedContentStrategy = inngest.createFunction(
       idempotencyKey,
       timestamp: Date.now(),
     };
-    
+
     // Cache result for idempotency
     await redis.setex(`idempotency:${idempotencyKey}`, 7200, JSON.stringify(result));
-    
+
     return result;
   }
 );
@@ -327,34 +327,34 @@ export const generateFactBasedContentSection = inngest.createFunction(
   { event: 'content/fact-based-section-generate' },
   async ({ event, step }) => {
     const { userId, projectId, sectionId, section, blueprint, availableFacts } = event.data;
-    
+
     const idempotencyKey = generateIdempotencyKey.contentGeneration(userId, projectId, sectionId);
-    
+
     // Check for duplicate section requests
     const duplicateCheck = await step.run('check-duplicate-section', async () => {
       const existingResult = await redis.get(`idempotency:${idempotencyKey}`);
       return existingResult ? JSON.parse(existingResult) : null;
     });
-    
+
     if (duplicateCheck) {
       console.log(`Duplicate section request detected for ${idempotencyKey}`);
       return duplicateCheck;
     }
-    
+
     // Update section status
     await step.run('update-section-status-writing', async () => {
       const supabase = await createRouteClient();
-      
+
       const { error } = await supabase
         .from('content_sections')
         .update({ status: 'writing' })
         .eq('project_id', projectId)
         .eq('heading', section.heading);
-      
+
       if (error) {
         console.error(`Failed to update section status: ${error.message}`);
       }
-      
+
       // Send real-time progress update
       await supabase
         .channel(`project:${projectId}`)
@@ -369,11 +369,11 @@ export const generateFactBasedContentSection = inngest.createFunction(
           }
         });
     });
-    
+
     // Filter and select relevant atomic facts for this section
     const sectionFacts = await step.run('select-section-facts', async () => {
       console.log(`Selecting atomic facts for section: ${section.heading}`);
-      
+
       const relevantFacts = await atomicFactsExtractor.filterFactsForSection(
         availableFacts,
         section.heading,
@@ -381,58 +381,58 @@ export const generateFactBasedContentSection = inngest.createFunction(
         section.subSections.flatMap(sub => sub.keyPoints),
         userId
       );
-      
+
       // Apply section-specific filtering
       const filteredFacts = relevantFacts.filter(fact => {
         const meetsConfidence = fact.confidence >= (section.factRequirements?.confidenceThreshold || 70);
         const meetsRelevance = fact.relevanceScore >= (section.factRequirements?.relevanceThreshold || 60);
-        const matchesCategory = !section.factRequirements?.preferredCategories?.length || 
+        const matchesCategory = !section.factRequirements?.preferredCategories?.length ||
           section.factRequirements.preferredCategories.includes(fact.category);
-        
+
         return meetsConfidence && meetsRelevance && matchesCategory;
       });
-      
+
       // Sort by quality score and limit to required amount
       const sortedFacts = filteredFacts
         .sort((a, b) => (b.confidence * b.relevanceScore) - (a.confidence * a.relevanceScore))
         .slice(0, section.factRequirements?.minimumFacts || 10);
-      
+
       console.log(`Selected ${sortedFacts.length} atomic facts for section "${section.heading}"`);
       return sortedFacts;
     });
-    
+
     // Get previously written sections for context
     const previousSections = await step.run('get-previous-sections', async () => {
       const supabase = await createRouteClient();
-      
+
       const { data: sections, error } = await supabase
         .from('content_sections')
         .select('heading, generated_content')
         .eq('project_id', projectId)
         .eq('status', 'completed')
         .order('section_order');
-      
+
       if (error) {
         console.error(`Failed to fetch previous sections: ${error.message}`);
         return [];
       }
-      
+
       return sections || [];
     });
-    
+
     // Generate section content using atomic facts
     const sectionContent = await step.run('generate-fact-based-section-content', async () => {
       // Prepare facts for content generation
-      const factContext = sectionFacts.map(fact => 
+      const factContext = sectionFacts.map(fact =>
         `[${fact.category.toUpperCase()}] ${fact.fact} (Confidence: ${fact.confidence}%, Source: ${fact.source})`
       ).join('\n');
-      
+
       const factsByCategory = sectionFacts.reduce((acc, fact) => {
         if (!acc[fact.category]) acc[fact.category] = [];
         acc[fact.category].push(fact.fact);
         return acc;
       }, {} as Record<string, string[]>);
-      
+
       const contextualPrompt = `
         Write the "${section.heading}" section using ONLY the provided atomic facts as your source material.
         
@@ -448,9 +448,9 @@ export const generateFactBasedContentSection = inngest.createFunction(
         ${factContext}
         
         FACTS BY CATEGORY:
-        ${Object.entries(factsByCategory).map(([category, facts]) => 
-          `${category.toUpperCase()}:\n${facts.map(fact => `  • ${fact}`).join('\n')}`
-        ).join('\n\n')}
+        ${Object.entries(factsByCategory).map(([category, facts]) =>
+        `${category.toUpperCase()}:\n${facts.map(fact => `  • ${fact}`).join('\n')}`
+      ).join('\n\n')}
         
         Previous Sections Context:
         ${previousSections.map(prev => `${prev.heading}: ${prev.generated_content?.substring(0, 200)}...`).join('\n')}
@@ -473,21 +473,21 @@ export const generateFactBasedContentSection = inngest.createFunction(
         
         CRITICAL: Base every statement on the atomic facts provided. Do not hallucinate or add information not present in the facts.
       `;
-      
+
       const result = await generateAIText(
         contextualPrompt,
         'content',
         userId
       );
-      
+
       return result.text;
     });
-    
+
     // Validate content against facts
     const validatedContent = await step.run('validate-content-against-facts', async () => {
       // In production, you might want to validate that all claims in the content
       // are supported by the atomic facts provided
-      
+
       // For now, we'll add fact attribution metadata
       const contentWithMetadata = {
         content: sectionContent,
@@ -502,14 +502,14 @@ export const generateFactBasedContentSection = inngest.createFunction(
         averageConfidence: Math.round(sectionFacts.reduce((sum, fact) => sum + fact.confidence, 0) / sectionFacts.length),
         categories: [...new Set(sectionFacts.map(fact => fact.category))]
       };
-      
+
       return contentWithMetadata;
     });
-    
+
     // Store generated content with fact metadata
     await step.run('store-fact-based-section-content', async () => {
       const supabase = await createRouteClient();
-      
+
       const { error } = await supabase
         .from('content_sections')
         .update({
@@ -524,11 +524,11 @@ export const generateFactBasedContentSection = inngest.createFunction(
         })
         .eq('project_id', projectId)
         .eq('heading', section.heading);
-      
+
       if (error) {
         throw new Error(`Failed to store section content: ${error.message}`);
       }
-      
+
       // Send real-time completion update
       await supabase
         .channel(`project:${projectId}`)
@@ -547,23 +547,23 @@ export const generateFactBasedContentSection = inngest.createFunction(
           }
         });
     });
-    
+
     // Check if all sections are complete
     await step.run('check-project-completion', async () => {
       const supabase = await createRouteClient();
-      
+
       const { data: sections, error } = await supabase
         .from('content_sections')
         .select('status')
         .eq('project_id', projectId);
-      
+
       if (error) {
         console.error(`Failed to check section completion: ${error.message}`);
         return;
       }
-      
+
       const allCompleted = sections?.every(s => s.status === 'completed');
-      
+
       if (allCompleted) {
         // Trigger content finalization pipeline
         await inngest.send({
@@ -574,11 +574,11 @@ export const generateFactBasedContentSection = inngest.createFunction(
             blueprint
           }
         });
-        
+
         console.log(`All fact-based sections completed for project ${projectId}, triggering finalization`);
       }
     });
-    
+
     const result = {
       success: true,
       sectionId,
@@ -591,11 +591,43 @@ export const generateFactBasedContentSection = inngest.createFunction(
       idempotencyKey,
       timestamp: Date.now(),
     };
-    
+
     // Cache result for idempotency
     await redis.setex(`idempotency:${idempotencyKey}`, 3600, JSON.stringify(result));
-    
+
     return result;
+  }
+);
+
+// Fact-based completion handler - triggers final assembly
+export const factBasedCompletionHandler = inngest.createFunction(
+  {
+    id: 'fact-based-completion-handler',
+    concurrency: {
+      limit: 1,
+      scope: "account",
+      key: '"gemini-quota-limit"',
+    },
+    retries: RETRY_CONFIG['database-operation'].attempts,
+  },
+  { event: 'content/fact-based-all-sections-complete' },
+  async ({ event, step }) => {
+    const { userId, projectId, blueprint } = event.data;
+
+    console.log(`All fact-based sections completed for project ${projectId}, triggering final assembly`);
+
+    await step.run('trigger-final-assembly', async () => {
+      await inngest.send({
+        name: 'content/final-assembly',
+        data: {
+          userId,
+          projectId,
+          blueprint
+        }
+      });
+    });
+
+    return { success: true, nextPhase: 'final-assembly' };
   }
 );
 
@@ -603,4 +635,5 @@ export const generateFactBasedContentSection = inngest.createFunction(
 export const factBasedContentGenerationFunctions = [
   generateFactBasedContentStrategy,
   generateFactBasedContentSection,
+  factBasedCompletionHandler,
 ];

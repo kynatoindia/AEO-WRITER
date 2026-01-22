@@ -70,7 +70,16 @@ export const updateProjectSchema = z.object({
   generatedContent: z.string().optional(),
   seoMetadata: z.any().optional(), // JSONB field
   tokenUsage: z.any().optional(), // JSONB field
-  costBreakdown: z.any().optional() // JSONB field
+  costBreakdown: z.any().optional(), // JSONB field
+  fact_vault: z.array(z.any()).optional(), // JSONB field
+  status_message: z.string().optional(),
+  progress: z.number().optional(),
+  current_step: z.string().optional(),
+  estimated_completion_time: z.string().optional(),
+  current_section: z.string().optional(),
+  progress_percentage: z.number().optional(),
+  steps: z.array(z.any()).optional(),
+  error_message: z.string().optional()
 });
 
 // Content section validation schemas
@@ -186,8 +195,8 @@ export const createUsageAnalyticsSchema = z.object({
 // API request validation schemas
 export const researchRequestSchema = z.object({
   competitorUrls: z.array(urlSchema)
-    .min(1, 'At least one competitor URL is required')
-    .max(5, 'Maximum 5 competitor URLs allowed'),
+    .max(5, 'Maximum 5 competitor URLs allowed')
+    .optional(),
   brandDocument: z.string().optional()
 });
 
@@ -547,6 +556,15 @@ export const databaseProjectSchema = z.object({
   seo_metadata: z.any().optional(), // JSONB
   token_usage: z.any().optional(), // JSONB
   cost_breakdown: z.any().optional(), // JSONB
+  fact_vault: z.array(z.any()).optional(), // JSONB
+  status_message: z.string().nullable().optional(),
+  progress: z.number().nullable().optional(),
+  current_step: z.string().nullable().optional(),
+  estimated_completion_time: z.string().nullable().optional(),
+  current_section: z.string().nullable().optional(),
+  progress_percentage: z.number().nullable().optional(),
+  steps: z.array(z.any()).nullable().optional(),
+  error_message: z.string().nullable().optional(),
   created_at: dateTimeSchema,
   updated_at: dateTimeSchema
 });

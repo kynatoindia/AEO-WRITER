@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { createClientSupabaseClient } from '@/lib/supabase/client';
+import { createClient } from '@/lib/supabase/client';
 import type { 
   ProjectStatus, 
   ContentBlueprint,
@@ -54,7 +54,7 @@ export function useContentGeneration({
     realtimeEvents: []
   });
   
-  const supabase = createClientSupabaseClient();
+  const supabase = createClient();
   
   // Fetch current progress from API
   const fetchProgress = useCallback(async () => {

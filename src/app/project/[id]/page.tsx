@@ -14,8 +14,8 @@ interface ProjectPageProps {
 // Loading component for the project page
 function ProjectPageSkeleton() {
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="border-b bg-white">
+    <div className="min-h-screen bg-background">
+      <div className="border-b border-border glass-card">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center gap-4">
             <Skeleton className="h-10 w-10" />
@@ -27,7 +27,7 @@ function ProjectPageSkeleton() {
           </div>
         </div>
       </div>
-      
+
       <div className="container mx-auto px-4 py-6 h-[calc(100vh-120px)]">
         <Skeleton className="h-full w-full" />
       </div>
@@ -38,14 +38,14 @@ function ProjectPageSkeleton() {
 // Main project content component
 async function ProjectContent({ projectId }: { projectId: string }) {
   const supabase = await createRouteClient();
-  
+
   // Get authenticated user
   const { data: { user }, error: authError } = await supabase.auth.getUser();
-  
+
   if (authError || !user) {
     redirect('/auth/login');
   }
-  
+
   // Fetch project details
   const { data: project, error: projectError } = await supabase
     .from('projects')
@@ -53,19 +53,19 @@ async function ProjectContent({ projectId }: { projectId: string }) {
     .eq('id', projectId)
     .eq('user_id', user.id)
     .single();
-  
+
   if (projectError || !project) {
     notFound();
   }
-  
+
   const typedProject = project as Project;
-  
+
   return <ProjectPageClient project={typedProject} />;
 }
 
 export default async function ProjectPage({ params }: ProjectPageProps) {
   const { id } = await params;
-  
+
   return (
     <Suspense fallback={<ProjectPageSkeleton />}>
       <ProjectContent projectId={id} />
@@ -77,14 +77,14 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
 export async function generateMetadata({ params }: ProjectPageProps) {
   const { id } = await params;
   const supabase = await createRouteClient();
-  
+
   try {
     const { data: project } = await supabase
       .from('projects')
       .select('topic')
       .eq('id', id)
       .single();
-    
+
     return {
       title: project?.topic ? `${project.topic} - AEO Writer` : 'Project - AEO Writer',
       description: 'AI-powered content generation in real-time'

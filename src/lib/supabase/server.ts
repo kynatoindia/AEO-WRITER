@@ -1,4 +1,4 @@
-import { createServerClient } from '@supabase/ssr';
+import { createServerClient as createSupabaseServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { Database } from '@/lib/database.types';
 
@@ -6,7 +6,7 @@ import { Database } from '@/lib/database.types';
 export const createServerSupabaseClient = async () => {
   const cookieStore = await cookies();
   
-  return createServerClient<Database>(
+  return createSupabaseServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
@@ -34,7 +34,7 @@ export const createServerSupabaseClient = async () => {
 export const createRouteClient = async () => {
   const cookieStore = await cookies();
   
-  return createServerClient<Database>(
+  return createSupabaseServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
@@ -57,3 +57,6 @@ export const createRouteClient = async () => {
     }
   );
 };
+
+// Alias for backward compatibility
+export const createServerClient = createServerSupabaseClient;

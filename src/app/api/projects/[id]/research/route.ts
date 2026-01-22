@@ -14,12 +14,13 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ): Promise<NextResponse<APIResponse>> {
   const { id: projectId } = await params;
+  console.log(`[Research API] POST request for project: ${projectId}`);
   try {
     const supabase = await createServerSupabaseClient();
-    
+
     // Get authenticated user
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
+
     if (authError || !user) {
       return NextResponse.json({
         success: false,
@@ -31,11 +32,13 @@ export async function POST(
         timestamp: new Date().toISOString(),
       }, { status: 401 });
     }
-    
+
     // Parse and validate request body
     const body = await request.json();
+    console.log('[Research API] Request body:', JSON.stringify(body));
     const validatedData = researchRequestSchema.parse(body);
-    
+    console.log('[Research API] Validated data:', JSON.stringify(validatedData));
+
     // Verify project exists and belongs to user
     const { data: project, error: projectError } = await supabase
       .from('projects')
@@ -79,8 +82,25 @@ export async function POST(
       brandDocumentPath: validatedData.brandDocument,
     };
 
+    // Update project status to indicate research has been queued
+    const { error: updateError } = await supabase
+      .from('projects')
+      .update({
+        status: 'researching',
+        status_message: 'Queuing AI-powered research pipeline...',
+        progress: 2,
+        current_step: 'Queuing pipeline',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', projectId);
+
+    if (updateError) {
+      console.error('Failed to update project status:', updateError);
+      // We'll continue anyway, but this is a bad sign for RLS or DB state
+    }
+
     console.log(`Triggering AI-powered research pipeline for project ${projectId}`);
-    
+
     // Try to send Inngest event, but don't fail if Inngest is not available
     let eventResult;
     try {
@@ -101,22 +121,8 @@ export async function POST(
       console.log('Modular research pipeline event sent successfully:', eventResult.ids[0]);
     } catch (inngestError) {
       console.error('Inngest event failed (non-blocking):', inngestError);
-      // Continue without Inngest - we'll just update the status
+      // Continue without Inngest - we've already updated the status
       eventResult = { ids: ['mock-event-id'] };
-    }
-
-    // Update project status to indicate research has been queued
-    const { error: updateError } = await supabase
-      .from('projects')
-      .update({
-        status: 'researching',
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', projectId);
-
-    if (updateError) {
-      console.error('Failed to update project status:', updateError);
-      // Don't fail the request since the event was already sent
     }
 
     return NextResponse.json({
@@ -135,9 +141,15 @@ export async function POST(
     });
 
   } catch (error) {
-    console.error('Research pipeline trigger failed:', error);
+    console.error('Research pipeline trigger failed with error:', error);
+
+    // Log more details about the error if it's an object
+    if (typeof error === 'object' && error !== null) {
+      console.error('Error details:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+    }
 
     if (error instanceof ZodError) {
+      console.error('Zod validation error:', error.issues);
       return NextResponse.json({
         success: false,
         error: {
@@ -160,7 +172,8 @@ export async function POST(
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Failed to start research pipeline',
+        message: error instanceof Error ? error.message : 'Failed to start research pipeline',
+        details: error instanceof Error ? { stack: error.stack } : undefined,
         retryable: true,
       },
       timestamp: new Date().toISOString(),
@@ -179,10 +192,10 @@ export async function GET(
   try {
     const { id: projectId } = await params;
     const supabase = await createServerSupabaseClient();
-    
+
     // Get authenticated user
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
+
     if (authError || !user) {
       return NextResponse.json({
         success: false,
@@ -194,7 +207,7 @@ export async function GET(
         timestamp: new Date().toISOString(),
       }, { status: 401 });
     }
-    
+
     // Get project with research data
     const { data: project, error: projectError } = await supabase
       .from('projects')
@@ -218,7 +231,7 @@ export async function GET(
     // Get research progress from cache if still in progress
     let progress = 100;
     let message = 'Research completed';
-    
+
     if (project.status === 'researching') {
       // In production, you would get actual progress from Redis or job queue
       progress = 50; // Placeholder
@@ -265,10 +278,10 @@ export async function DELETE(
   try {
     const { id: projectId } = await params;
     const supabase = await createServerSupabaseClient();
-    
+
     // Get authenticated user
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
+
     if (authError || !user) {
       return NextResponse.json({
         success: false,
@@ -280,7 +293,7 @@ export async function DELETE(
         timestamp: new Date().toISOString(),
       }, { status: 401 });
     }
-    
+
     // Verify project exists and belongs to user
     const { data: project, error: projectError } = await supabase
       .from('projects')

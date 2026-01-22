@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { redis, CACHE_KEYS } from '@/lib/redis/client';
 
-// Multi-provider AI gateway with automatic failover
+// Multi-provider AI gateway with automatic failover and Redis-based health tracking
 interface AIProvider {
   name: string;
   priority: number;
@@ -27,14 +28,79 @@ interface ProviderConfig {
   };
 }
 
+// Redis key for provider health status
+const PROVIDER_STATUS_KEY = (provider: string) => `ai:${provider}:status`;
+
 class MultiProviderAIGateway {
   private providers: AIProvider[] = [];
   private rateLimitTracker = new Map<string, { count: number; resetTime: number }>();
-  
+
   constructor(private config: ProviderConfig) {
     this.initializeProviders();
   }
-  
+
+  // Mark a provider as rate-limited in Redis with TTL
+  private async markProviderRateLimited(providerName: string, cooldownSeconds: number = 60): Promise<void> {
+    try {
+      const statusKey = PROVIDER_STATUS_KEY(providerName);
+      await redis.setex(statusKey, cooldownSeconds, JSON.stringify({
+        healthy: false,
+        rateLimited: true,
+        cooldownUntil: Date.now() + (cooldownSeconds * 1000),
+        reason: '429 Rate limit hit',
+        timestamp: new Date().toISOString()
+      }));
+      console.log(`[MultiProviderAI] Marked ${providerName} as rate-limited for ${cooldownSeconds}s`);
+    } catch (error) {
+      console.error(`[MultiProviderAI] Failed to mark provider status in Redis:`, error);
+    }
+  }
+
+  // Check if provider is healthy (not rate-limited) via Redis
+  private async isProviderHealthy(providerName: string): Promise<boolean> {
+    try {
+      const statusKey = PROVIDER_STATUS_KEY(providerName);
+      const status = await redis.get(statusKey);
+
+      if (!status) {
+        return true; // No status = healthy
+      }
+
+      const parsed = typeof status === 'string' ? JSON.parse(status) : status;
+      return parsed.healthy !== false;
+    } catch (error) {
+      console.error(`[MultiProviderAI] Failed to check provider status:`, error);
+      return true; // Assume healthy on error
+    }
+  }
+
+  // Reset provider status (for manual recovery)
+  async resetProviderStatus(providerName: string): Promise<void> {
+    try {
+      const statusKey = PROVIDER_STATUS_KEY(providerName);
+      await redis.del(statusKey);
+      console.log(`[MultiProviderAI] Reset status for ${providerName}`);
+    } catch (error) {
+      console.error(`[MultiProviderAI] Failed to reset provider status:`, error);
+    }
+  }
+
+  // Parse retry-after from 429 response (seconds)
+  private parseRetryAfter(error: any): number {
+    // Default cooldown
+    let cooldown = 60;
+
+    // Try to extract from error message or headers
+    const message = error?.message || '';
+    const retryMatch = message.match(/retry.?(?:in|after)\s*[:\s]?\s*(\d+(?:\.\d+)?)\s*s/i);
+    if (retryMatch) {
+      cooldown = Math.ceil(parseFloat(retryMatch[1]));
+    }
+
+    // Cap between 30s and 300s
+    return Math.min(Math.max(cooldown, 30), 300);
+  }
+
   private initializeProviders() {
     // Gemini Provider (Primary for research/analysis)
     if (this.config.gemini.apiKey) {
@@ -52,11 +118,12 @@ class MultiProviderAIGateway {
           return result.response.text();
         },
         isAvailable: async () => {
-          return !this.isRateLimited('gemini');
+          const redisHealthy = await this.isProviderHealthy('gemini');
+          return redisHealthy && !this.isRateLimited('gemini');
         }
       });
     }
-    
+
     // Groq Provider (Fast inference for content generation)
     if (this.config.groq.apiKey) {
       this.providers.push({
@@ -80,20 +147,21 @@ class MultiProviderAIGateway {
               max_tokens: 4000,
             }),
           });
-          
+
           if (!response.ok) {
             throw new Error(`Groq API error: ${response.status}`);
           }
-          
+
           const data = await response.json();
           return data.choices[0].message.content;
         },
         isAvailable: async () => {
-          return !this.isRateLimited('groq');
+          const redisHealthy = await this.isProviderHealthy('groq');
+          return redisHealthy && !this.isRateLimited('groq');
         }
       });
     }
-    
+
     // OpenRouter Provider (Fallback with multiple models)
     if (this.config.openrouter.apiKey) {
       this.providers.push({
@@ -119,43 +187,44 @@ class MultiProviderAIGateway {
               max_tokens: 4000,
             }),
           });
-          
+
           if (!response.ok) {
             throw new Error(`OpenRouter API error: ${response.status}`);
           }
-          
+
           const data = await response.json();
           return data.choices[0].message.content;
         },
         isAvailable: async () => {
-          return !this.isRateLimited('openrouter');
+          const redisHealthy = await this.isProviderHealthy('openrouter');
+          return redisHealthy && !this.isRateLimited('openrouter');
         }
       });
     }
-    
+
     // Sort providers by priority
     this.providers.sort((a, b) => a.priority - b.priority);
   }
-  
+
   private isRateLimited(providerName: string): boolean {
     const tracker = this.rateLimitTracker.get(providerName);
     if (!tracker) return false;
-    
+
     const now = Date.now();
     if (now > tracker.resetTime) {
       // Reset the counter
       this.rateLimitTracker.set(providerName, { count: 0, resetTime: now + 60000 });
       return false;
     }
-    
+
     const provider = this.providers.find(p => p.name === providerName);
     return tracker.count >= (provider?.rateLimit.requestsPerMinute || 15);
   }
-  
+
   private trackRequest(providerName: string) {
     const now = Date.now();
     const tracker = this.rateLimitTracker.get(providerName) || { count: 0, resetTime: now + 60000 };
-    
+
     if (now > tracker.resetTime) {
       // Reset the counter
       this.rateLimitTracker.set(providerName, { count: 1, resetTime: now + 60000 });
@@ -164,17 +233,17 @@ class MultiProviderAIGateway {
       this.rateLimitTracker.set(providerName, tracker);
     }
   }
-  
+
   async generateWithFailover(prompt: string, options: {
     preferredProvider?: string;
     maxRetries?: number;
     taskType?: 'research' | 'content' | 'analysis';
   } = {}): Promise<{ content: string; provider: string; attempts: number }> {
     const { preferredProvider, maxRetries = 3, taskType = 'content' } = options;
-    
+
     // Optimize provider selection based on task type
     let orderedProviders = [...this.providers];
-    
+
     if (taskType === 'research') {
       // Prefer Gemini for research (large context window)
       orderedProviders = orderedProviders.sort((a, b) => {
@@ -190,7 +259,7 @@ class MultiProviderAIGateway {
         return a.priority - b.priority;
       });
     }
-    
+
     // If preferred provider specified, try it first
     if (preferredProvider) {
       const preferred = orderedProviders.find(p => p.name === preferredProvider);
@@ -198,68 +267,72 @@ class MultiProviderAIGateway {
         orderedProviders = [preferred, ...orderedProviders.filter(p => p.name !== preferredProvider)];
       }
     }
-    
+
     let attempts = 0;
     let lastError: Error | null = null;
-    
+
     for (const provider of orderedProviders) {
       if (attempts >= maxRetries) break;
-      
+
       try {
         attempts++;
-        
+
         // Check if provider is available
         const isAvailable = await provider.isAvailable();
         if (!isAvailable) {
           console.log(`Provider ${provider.name} is rate limited, trying next...`);
           continue;
         }
-        
+
         // Track the request for rate limiting
         this.trackRequest(provider.name);
-        
+
         console.log(`Attempting generation with ${provider.name} (attempt ${attempts})`);
-        
+
         // Add artificial delay for Gemini to prevent burst limits
         if (provider.name === 'gemini' && attempts > 1) {
           await new Promise(resolve => setTimeout(resolve, 2000));
         }
-        
+
         const content = await provider.generate(prompt);
-        
+
         console.log(`Successfully generated content with ${provider.name}`);
         return { content, provider: provider.name, attempts };
-        
+
       } catch (error: any) {
         lastError = error;
         console.error(`Provider ${provider.name} failed:`, error.message);
-        
+
         // Handle specific error types
-        if (error.message?.includes('429') || error.message?.includes('rate limit')) {
-          // Mark provider as rate limited
+        if (error.message?.includes('429') || error.message?.includes('rate limit') || error.message?.includes('quota')) {
+          // Parse retry-after from error and mark in Redis
+          const cooldownSeconds = this.parseRetryAfter(error);
+          await this.markProviderRateLimited(provider.name, cooldownSeconds);
+
+          // Also mark in memory tracker
           const tracker = this.rateLimitTracker.get(provider.name) || { count: 0, resetTime: Date.now() + 60000 };
           tracker.count = provider.rateLimit.requestsPerMinute; // Max out the counter
           this.rateLimitTracker.set(provider.name, tracker);
-          
-          console.log(`Provider ${provider.name} hit rate limit, marking as unavailable`);
+
+          console.log(`[MultiProviderAI] Provider ${provider.name} hit rate limit, cooling down for ${cooldownSeconds}s`);
           continue;
         }
-        
+
         if (error.message?.includes('500') || error.message?.includes('502') || error.message?.includes('503')) {
           // Server error - try next provider
           console.log(`Provider ${provider.name} has server issues, trying next...`);
           continue;
         }
-        
+
         // For other errors, wait a bit before trying next provider
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
     }
-    
+
     // All providers failed
     throw new Error(`All AI providers failed. Last error: ${lastError?.message || 'Unknown error'}. Attempts: ${attempts}`);
   }
-  
+
   // Specialized methods for different use cases
   async generateResearch(prompt: string): Promise<string> {
     const result = await this.generateWithFailover(prompt, {
@@ -268,7 +341,7 @@ class MultiProviderAIGateway {
     });
     return result.content;
   }
-  
+
   async generateContent(prompt: string): Promise<string> {
     const result = await this.generateWithFailover(prompt, {
       taskType: 'content',
@@ -276,7 +349,7 @@ class MultiProviderAIGateway {
     });
     return result.content;
   }
-  
+
   async generateAnalysis(prompt: string): Promise<string> {
     const result = await this.generateWithFailover(prompt, {
       taskType: 'analysis',
@@ -284,7 +357,7 @@ class MultiProviderAIGateway {
     });
     return result.content;
   }
-  
+
   // Get provider status for monitoring
   getProviderStatus() {
     return this.providers.map(provider => ({

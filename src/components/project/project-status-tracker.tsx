@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { createClientSupabaseClient } from '@/lib/supabase/client';
+import { createClient } from '@/lib/supabase/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
@@ -89,7 +89,7 @@ export function ProjectStatusTracker({
   const [metadata, setMetadata] = useState<any>(null);
 
   useEffect(() => {
-    const supabase = createClientSupabaseClient();
+    const supabase = createClient();
     
     // Subscribe to real-time updates for this project
     const channel = supabase

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { createClientSupabaseClient } from '@/lib/supabase/client';
+import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -17,7 +17,7 @@ export function PasswordUpdate() {
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const supabase = createClientSupabaseClient();
+  const supabase = createClient();
 
   const updatePassword = async () => {
     if (newPassword !== confirmPassword) {

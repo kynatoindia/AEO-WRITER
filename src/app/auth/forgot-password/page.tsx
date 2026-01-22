@@ -2,12 +2,12 @@
 
 import { Auth } from '@supabase/auth-ui-react';
 import { ThemeSupa } from '@supabase/auth-ui-shared';
-import { createClientSupabaseClient } from '@/lib/supabase/client';
+import { createClient } from '@/lib/supabase/client';
 import { useState } from 'react';
 import Link from 'next/link';
 
 export default function ForgotPasswordPage() {
-  const [supabase] = useState(() => createClientSupabaseClient());
+  const [supabase] = useState(() => createClient());
   const [emailSent, setEmailSent] = useState(false);
 
   return (

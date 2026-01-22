@@ -1,85 +1,220 @@
-import { createServerSupabaseClient } from '@/lib/supabase/server';
-import { redirect } from 'next/navigation';
+'use client';
+
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
+import { motion, useScroll, useTransform } from 'framer-motion';
+import { createClient } from '@/lib/supabase/client';
+import { useRouter } from 'next/navigation';
+import { Search, PenTool, Zap, ArrowRight, Shield, Globe, Sparkles } from 'lucide-react';
+import { Footer } from '@/components/ui/footer';
+import { Navigation } from '@/components/ui/navigation';
 
-export default async function Home() {
-  const supabase = await createServerSupabaseClient();
-  
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+export default function Home() {
+  const supabase = createClient();
+  const router = useRouter();
+  const [isLoading, setIsLoading] = useState(true);
+  const { scrollY } = useScroll();
 
-  // Redirect authenticated users to dashboard
-  if (user) {
-    redirect('/dashboard');
+  const y1 = useTransform(scrollY, [0, 500], [0, 200]);
+  const opacity = useTransform(scrollY, [0, 300], [1, 0]);
+
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        router.push('/dashboard');
+      } else {
+        setIsLoading(false);
+      }
+    };
+    checkUser();
+  }, [supabase, router]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background relative overflow-hidden">
+        {/* Background Animation */}
+        <div className="absolute inset-0 -z-10">
+          <div className="absolute top-[20%] left-[10%] w-96 h-96 bg-gradient-to-br from-primary/10 to-purple-600/5 blur-[120px] rounded-full animate-pulse" />
+          <div className="absolute bottom-[20%] right-[10%] w-80 h-80 bg-gradient-to-tl from-indigo-600/8 to-cyan-500/5 blur-[100px] rounded-full animate-pulse delay-1000" />
+        </div>
+        
+        <div className="glass-card p-12 rounded-3xl border border-white/10 text-center">
+          <div className="w-16 h-16 border-4 border-primary/20 border-t-primary rounded-full animate-spin mx-auto mb-6" />
+          <h3 className="text-xl font-semibold text-gradient mb-2">Initializing AEO Writer Pro</h3>
+          <p className="text-muted-foreground">Preparing your AI content workspace...</p>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-      <div className="container mx-auto px-4 py-16">
-        <div className="text-center">
-          <h1 className="text-5xl font-bold text-gray-900 mb-6">
-            AEO Writer Pro
-          </h1>
-          <p className="text-xl text-gray-600 mb-8 max-w-2xl mx-auto">
-            AI-powered SEO content generation platform that helps you create 
-            high-quality, search-optimized blog posts using competitor research 
-            and advanced AI technology.
-          </p>
-          
-          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-            <Button asChild size="lg" className="px-8 py-3">
+    <div className="relative min-h-screen overflow-hidden">
+      <Navigation />
+      
+      {/* Hero Section */}
+      <section className="relative pt-32 pb-20 px-4">
+        <motion.div
+          style={{ y: y1, opacity }}
+          className="container mx-auto text-center relative z-10"
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8 }}
+            className="inline-flex items-center gap-2 px-6 py-3 rounded-full glass-card mb-8 text-sm font-medium text-primary border-primary/20 hover:border-primary/40 transition-all duration-300 hover:scale-105"
+          >
+            <Sparkles className="w-4 h-4 animate-pulse" />
+            <span>The Future of SEO Content is Here</span>
+            <div className="w-2 h-2 bg-primary rounded-full animate-pulse" />
+          </motion.div>
+
+          <motion.h1
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.2 }}
+            className="text-6xl md:text-8xl lg:text-9xl font-bold mb-8 tracking-tight leading-none"
+          >
+            <span className="text-gradient block">Craft Content That</span>
+            <span className="text-gradient-rainbow block mt-2">Dominates Search</span>
+          </motion.h1>
+
+          <motion.p
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.4 }}
+            className="text-xl text-muted-foreground mb-12 max-w-3xl mx-auto leading-relaxed"
+          >
+            AEO Writer Pro leverages advanced agentic AI to research, write, and optimize
+            your content for the next generation of search engines.
+          </motion.p>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.6 }}
+            className="flex flex-col sm:flex-row gap-6 justify-center items-center"
+          >
+            <Button asChild size="lg" className="auth-button px-12 h-16 text-lg rounded-2xl hover-lift group">
               <Link href="/auth/register">
-                Get Started Free
+                Start Building Now 
+                <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" />
               </Link>
             </Button>
-            <Button variant="outline" asChild size="lg" className="px-8 py-3">
+            <Button variant="outline" asChild size="lg" className="glass-card h-16 px-12 text-lg border-white/10 hover:bg-white/8 rounded-2xl hover-lift">
               <Link href="/auth/login">
-                Sign In
+                View Live Demo
               </Link>
             </Button>
+          </motion.div>
+        </motion.div>
+
+        {/* Enhanced Decorative Elements */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full -z-10 overflow-hidden">
+          <div className="absolute top-[10%] left-[5%] w-72 h-72 bg-gradient-to-br from-primary/15 to-purple-600/10 blur-[100px] rounded-full animate-float" />
+          <div className="absolute bottom-[10%] right-[5%] w-96 h-96 bg-gradient-to-tl from-purple-600/15 to-pink-500/10 blur-[100px] rounded-full animate-float" style={{ animationDelay: '-3s' }} />
+          <div className="absolute top-[30%] right-[20%] w-64 h-64 bg-gradient-to-bl from-cyan-500/10 to-blue-500/8 blur-[80px] rounded-full animate-float" style={{ animationDelay: '-1.5s' }} />
+        </div>
+      </section>
+
+      {/* Features Grid */}
+      <section className="py-24 px-4 relative">
+        <div className="container mx-auto">
+          <div className="grid md:grid-cols-3 gap-8">
+            <FeatureCard
+              icon={<Search className="w-8 h-8 text-primary" />}
+              title="Deep Research"
+              description="Our agents crawl the web to find the most relevant data and competitor insights for your niche."
+              delay={0.2}
+            />
+            <FeatureCard
+              icon={<PenTool className="w-8 h-8 text-primary" />}
+              title="Agentic Writing"
+              description="Not just a LLM wrapper. Our agents follow a multi-step process to ensure quality and accuracy."
+              delay={0.4}
+            />
+            <FeatureCard
+              icon={<Zap className="w-8 h-8 text-primary" />}
+              title="Instant SEO"
+              description="Automatically optimized for keywords, featured snippets, and search intent from the start."
+              delay={0.6}
+            />
           </div>
         </div>
+      </section>
 
-        <div className="mt-16 grid md:grid-cols-3 gap-8">
-          <div className="text-center p-6 bg-white rounded-lg shadow-sm">
-            <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mx-auto mb-4">
-              <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+      {/* Enhanced Trust Section */}
+      <section className="py-24 px-4 relative">
+        <div className="absolute inset-0 bg-gradient-to-r from-white/5 via-transparent to-white/5 backdrop-blur-sm border-y border-white/5" />
+        <div className="container mx-auto text-center relative z-10">
+          <motion.h2 
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className="text-4xl font-bold mb-16 text-gradient-rainbow"
+          >
+            Powered by Industry Leaders
+          </motion.h2>
+          <motion.div 
+            initial={{ opacity: 0 }}
+            whileInView={{ opacity: 1 }}
+            viewport={{ once: true }}
+            transition={{ delay: 0.3 }}
+            className="flex flex-wrap justify-center gap-12 opacity-60 hover:opacity-100 transition-opacity duration-500"
+          >
+            {/* Enhanced Placeholder Logos */}
+            <div className="flex items-center gap-3 text-2xl font-bold hover:text-primary transition-colors duration-300 cursor-pointer">
+              <div className="p-2 rounded-xl bg-white/5 border border-white/10">
+                <Globe className="w-8 h-8" />
+              </div>
+              GlobalScale
             </div>
-            <h3 className="text-lg font-semibold mb-2">Research & Analysis</h3>
-            <p className="text-gray-600">
-              Analyze competitor content and extract insights to create better, more comprehensive articles.
-            </p>
-          </div>
-
-          <div className="text-center p-6 bg-white rounded-lg shadow-sm">
-            <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mx-auto mb-4">
-              <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
+            <div className="flex items-center gap-3 text-2xl font-bold hover:text-primary transition-colors duration-300 cursor-pointer">
+              <div className="p-2 rounded-xl bg-white/5 border border-white/10">
+                <Shield className="w-8 h-8" />
+              </div>
+              SecureNet
             </div>
-            <h3 className="text-lg font-semibold mb-2">AI-Powered Writing</h3>
-            <p className="text-gray-600">
-              Generate high-quality, SEO-optimized content using advanced AI models trained for content creation.
-            </p>
-          </div>
-
-          <div className="text-center p-6 bg-white rounded-lg shadow-sm">
-            <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mx-auto mb-4">
-              <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
-              </svg>
+            <div className="flex items-center gap-3 text-2xl font-bold hover:text-primary transition-colors duration-300 cursor-pointer">
+              <div className="p-2 rounded-xl bg-white/5 border border-white/10">
+                <Zap className="w-8 h-8" />
+              </div>
+              RapidFlow
             </div>
-            <h3 className="text-lg font-semibold mb-2">SEO Optimization</h3>
-            <p className="text-gray-600">
-              Built-in SEO optimization ensures your content ranks well and captures featured snippets.
-            </p>
-          </div>
+          </motion.div>
         </div>
-      </div>
+      </section>
+
+      <Footer />
     </div>
+  );
+}
+
+function FeatureCard({ icon, title, description, delay }: { icon: React.ReactNode, title: string, description: string, delay: number }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 30 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true }}
+      transition={{ duration: 0.8, delay }}
+      className="p-8 glass-dark rounded-3xl border border-white/5 hover:border-primary/30 transition-all duration-500 group hover-lift relative overflow-hidden"
+    >
+      {/* Background Gradient */}
+      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-purple-600/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+      
+      {/* Glow Effect */}
+      <div className="absolute -inset-1 bg-gradient-to-r from-primary/20 via-purple-600/20 to-pink-500/20 rounded-3xl blur opacity-0 group-hover:opacity-75 transition-opacity duration-500" />
+      
+      <div className="relative z-10">
+        <div className="mb-6 p-4 bg-gradient-to-br from-primary/15 to-purple-600/10 rounded-2xl w-fit group-hover:scale-110 transition-transform duration-500 border border-white/10">
+          {icon}
+        </div>
+        <h3 className="text-2xl font-bold mb-4 text-white group-hover:text-gradient-primary transition-all duration-300">{title}</h3>
+        <p className="text-muted-foreground leading-relaxed group-hover:text-white/80 transition-colors duration-300">
+          {description}
+        </p>
+      </div>
+    </motion.div>
   );
 }

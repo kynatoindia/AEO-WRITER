@@ -1,14 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { createClientSupabaseClient } from '@/lib/supabase/client';
+import { createClient } from '@/lib/supabase/client';
 import { useSearchParams } from 'next/navigation';
 
 export default function TestCallbackPage() {
   const [status, setStatus] = useState('Loading...');
   const [details, setDetails] = useState<any>(null);
   const searchParams = useSearchParams();
-  const supabase = createClientSupabaseClient();
+  const supabase = createClient();
 
   useEffect(() => {
     const testAuth = async () => {

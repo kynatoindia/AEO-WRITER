@@ -2,14 +2,14 @@
 
 import { Auth } from '@supabase/auth-ui-react';
 import { ThemeSupa } from '@supabase/auth-ui-shared';
-import { createClientSupabaseClient } from '@/lib/supabase/client';
+import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 
 export default function RegisterPage() {
   const router = useRouter();
-  const [supabase] = useState(() => createClientSupabaseClient());
+  const [supabase] = useState(() => createClient());
 
   useEffect(() => {
     const {

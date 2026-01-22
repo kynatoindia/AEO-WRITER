@@ -9,10 +9,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
-import { 
-  ArrowLeft, 
-  FileText, 
-  Calendar, 
+import {
+  ArrowLeft,
+  FileText,
+  Calendar,
   User,
   ExternalLink,
   Globe,
@@ -37,31 +37,31 @@ export function ProjectPageClient({ project: initialProject }: ProjectPageClient
   const router = useRouter();
   const [project, setProject] = useState(initialProject);
   const [isStartingResearch, setIsStartingResearch] = useState(false);
-  
+
   const getStatusConfig = (status: string) => {
     switch (status) {
-      case 'completed': 
-        return { color: 'bg-green-100 text-green-800', icon: FileText, description: 'Content generation completed' };
-      case 'writing': 
-        return { color: 'bg-blue-100 text-blue-800', icon: Clock, description: 'AI is writing content' };
-      case 'finalizing': 
-        return { color: 'bg-purple-100 text-purple-800', icon: Clock, description: 'Finalizing and polishing content' };
-      case 'planning': 
-        return { color: 'bg-yellow-100 text-yellow-800', icon: Target, description: 'Creating content blueprint' };
-      case 'researching': 
-        return { color: 'bg-indigo-100 text-indigo-800', icon: BarChart3, description: 'Analyzing competitors and research' };
-      case 'stuck': 
-        return { color: 'bg-amber-100 text-amber-800', icon: Clock, description: 'Temporarily paused due to rate limits' };
-      case 'error': 
-        return { color: 'bg-red-100 text-red-800', icon: ExternalLink, description: 'Error occurred during processing' };
-      default: 
-        return { color: 'bg-gray-100 text-gray-800', icon: FileText, description: 'Project created, ready to start' };
+      case 'completed':
+        return { color: 'bg-green-500/20 text-green-400 border border-green-500/30', icon: FileText, description: 'Content generation completed' };
+      case 'writing':
+        return { color: 'bg-blue-500/20 text-blue-400 border border-blue-500/30', icon: Clock, description: 'AI is writing content' };
+      case 'finalizing':
+        return { color: 'bg-purple-500/20 text-purple-400 border border-purple-500/30', icon: Clock, description: 'Finalizing and polishing content' };
+      case 'planning':
+        return { color: 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30', icon: Target, description: 'Creating content blueprint' };
+      case 'researching':
+        return { color: 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30', icon: BarChart3, description: 'Analyzing competitors and research' };
+      case 'stuck':
+        return { color: 'bg-amber-500/20 text-amber-400 border border-amber-500/30', icon: Clock, description: 'Temporarily paused due to rate limits' };
+      case 'error':
+        return { color: 'bg-red-500/20 text-red-400 border border-red-500/30', icon: ExternalLink, description: 'Error occurred during processing' };
+      default:
+        return { color: 'bg-muted text-muted-foreground border border-border', icon: FileText, description: 'Project created, ready to start' };
     }
   };
-  
+
   const statusConfig = getStatusConfig(project.status);
   const StatusIcon = statusConfig.icon;
-  
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
@@ -74,19 +74,19 @@ export function ProjectPageClient({ project: initialProject }: ProjectPageClient
 
   const startResearch = async () => {
     setIsStartingResearch(true);
-    
+
     try {
       const requestBody: any = {
         competitorUrls: project.competitor_urls,
       };
-      
+
       // Only include brandDocument if it exists
       if (project.brand_document_path) {
         requestBody.brandDocument = project.brand_document_path;
       }
-      
+
       console.log('Starting research with data:', requestBody);
-      
+
       const response = await fetch(`/api/projects/${project.id}/research`, {
         method: 'POST',
         headers: {
@@ -96,7 +96,7 @@ export function ProjectPageClient({ project: initialProject }: ProjectPageClient
       });
 
       console.log('Research API response status:', response.status);
-      
+
       const result = await response.json();
       console.log('Research API result:', result);
 
@@ -107,13 +107,13 @@ export function ProjectPageClient({ project: initialProject }: ProjectPageClient
 
       // Update project status
       setProject(prev => ({ ...prev, status: 'researching' }));
-      
+
       toast.success('Research started successfully!');
       toast.info(`Analyzing ${project.competitor_urls.length} competitor URLs...`);
-      
+
       // Refresh the page to show the updated status
       router.refresh();
-      
+
     } catch (error: any) {
       console.error('Failed to start research:', error);
       toast.error(error.message || 'Failed to start research');
@@ -146,28 +146,28 @@ export function ProjectPageClient({ project: initialProject }: ProjectPageClient
       // Update local project state
       setProject(prev => ({ ...prev, status: newStatus as any }));
       toast.success(`Project status updated to ${newStatus}`);
-      
+
       // Refresh the page to show updated UI
       router.refresh();
-      
+
     } catch (error: any) {
       console.error('Failed to update status:', error);
       toast.error(error.message || 'Failed to update status');
     }
   };
-  
+
   const handleComplete = async (content: string) => {
     console.log('Content generation completed');
   };
-  
+
   const handleError = async (error: string) => {
     console.error('Content generation error:', error);
   };
-  
+
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-background">
       {/* Enhanced Project Header */}
-      <div className="border-b bg-white">
+      <div className="border-b border-border glass-card">
         <div className="container mx-auto px-4 py-6">
           <div className="flex items-start gap-6">
             <Link href="/dashboard">
@@ -176,7 +176,7 @@ export function ProjectPageClient({ project: initialProject }: ProjectPageClient
                 Back to Dashboard
               </Button>
             </Link>
-            
+
             <div className="flex-1">
               <div className="flex items-start justify-between mb-4">
                 <div>
@@ -189,7 +189,7 @@ export function ProjectPageClient({ project: initialProject }: ProjectPageClient
                   </div>
                   <p className="text-muted-foreground">{statusConfig.description}</p>
                 </div>
-                
+
                 <div className="flex items-center gap-2">
                   {project.status === 'completed' && (
                     <Button variant="outline" size="sm" className="flex items-center gap-2">
@@ -205,22 +205,22 @@ export function ProjectPageClient({ project: initialProject }: ProjectPageClient
                     <Trash2 className="h-4 w-4" />
                     Delete
                   </Button>
-                  
+
                   {/* Temporary testing buttons */}
                   {process.env.NODE_ENV === 'development' && (
                     <div className="flex items-center gap-1 ml-4 border-l pl-4">
                       <span className="text-xs text-muted-foreground">Test:</span>
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
+                      <Button
+                        variant="outline"
+                        size="sm"
                         className="text-xs h-7 px-2"
                         onClick={() => updateProjectStatus('planning')}
                       >
                         →Planning
                       </Button>
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
+                      <Button
+                        variant="outline"
+                        size="sm"
                         className="text-xs h-7 px-2"
                         onClick={() => updateProjectStatus('writing')}
                       >
@@ -230,7 +230,7 @@ export function ProjectPageClient({ project: initialProject }: ProjectPageClient
                   )}
                 </div>
               </div>
-              
+
               {/* Project Metadata Grid */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-sm">
                 <div>
@@ -240,7 +240,7 @@ export function ProjectPageClient({ project: initialProject }: ProjectPageClient
                   </div>
                   <p className="font-medium">{formatDate(project.created_at)}</p>
                 </div>
-                
+
                 <div>
                   <div className="flex items-center gap-2 text-muted-foreground mb-1">
                     <Clock className="h-4 w-4" />
@@ -248,7 +248,7 @@ export function ProjectPageClient({ project: initialProject }: ProjectPageClient
                   </div>
                   <p className="font-medium">{formatDate(project.updated_at)}</p>
                 </div>
-                
+
                 <div>
                   <div className="flex items-center gap-2 text-muted-foreground mb-1">
                     <User className="h-4 w-4" />
@@ -258,7 +258,7 @@ export function ProjectPageClient({ project: initialProject }: ProjectPageClient
                     {project.tone} • {project.format.replace('-', ' ')}
                   </p>
                 </div>
-                
+
                 <div>
                   <div className="flex items-center gap-2 text-muted-foreground mb-1">
                     <Globe className="h-4 w-4" />
@@ -267,7 +267,7 @@ export function ProjectPageClient({ project: initialProject }: ProjectPageClient
                   <p className="font-medium">{project.competitor_urls.length} URLs</p>
                 </div>
               </div>
-              
+
               {/* Additional Project Details */}
               {(project.brand_document_path || project.competitor_urls.length > 0) && (
                 <>
@@ -287,7 +287,7 @@ export function ProjectPageClient({ project: initialProject }: ProjectPageClient
                         </div>
                       </div>
                     )}
-                    
+
                     {project.competitor_urls.length > 0 && (
                       <div>
                         <div className="flex items-center gap-2 text-muted-foreground mb-2">
@@ -315,7 +315,7 @@ export function ProjectPageClient({ project: initialProject }: ProjectPageClient
           </div>
         </div>
       </div>
-      
+
       {/* Main Content Area */}
       <div className="container mx-auto px-4 py-6 h-[calc(100vh-200px)]">
         {project.status === 'draft' ? (
@@ -324,12 +324,12 @@ export function ProjectPageClient({ project: initialProject }: ProjectPageClient
               <FileText className="h-16 w-16 mx-auto mb-6 text-muted-foreground" />
               <CardTitle className="mb-4 text-xl">Ready to Start</CardTitle>
               <p className="text-muted-foreground mb-6 leading-relaxed">
-                Your project has been created successfully. Click the button below to begin 
+                Your project has been created successfully. Click the button below to begin
                 the research phase, where we'll analyze your competitors and create a content strategy.
               </p>
               <div className="space-y-3">
-                <Button 
-                  size="lg" 
+                <Button
+                  size="lg"
                   className="w-full"
                   onClick={startResearch}
                   disabled={isStartingResearch}
@@ -358,10 +358,10 @@ export function ProjectPageClient({ project: initialProject }: ProjectPageClient
             <CardContent className="text-center max-w-md">
               <BarChart3 className="h-16 w-16 mx-auto mb-6 text-indigo-500 animate-pulse" />
               <CardTitle className="mb-4 text-xl">Research in Progress</CardTitle>
-              
+
               {/* Use the ProjectStatusMonitor for detailed status updates */}
               <div className="mb-6">
-                <ProjectStatusMonitor 
+                <ProjectStatusMonitor
                   projectId={project.id}
                   onStatusChange={(status) => {
                     // Update local project state when status changes
@@ -369,21 +369,21 @@ export function ProjectPageClient({ project: initialProject }: ProjectPageClient
                   }}
                 />
               </div>
-              
+
               <div className="space-y-3">
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div className="bg-indigo-600 h-2 rounded-full animate-pulse" style={{ width: '60%' }}></div>
+                <div className="w-full bg-surface-2 rounded-full h-2">
+                  <div className="bg-indigo-500 h-2 rounded-full animate-pulse" style={{ width: '60%' }}></div>
                 </div>
                 <p className="text-sm text-muted-foreground">
                   Analyzing {project.competitor_urls.length} competitor URLs...
                 </p>
-                
+
                 {/* Development mode: Show manual progress button */}
                 {process.env.NODE_ENV === 'development' && (
                   <div className="mt-6 pt-4 border-t">
                     <p className="text-xs text-muted-foreground mb-2">Development Mode:</p>
-                    <Button 
-                      variant="outline" 
+                    <Button
+                      variant="outline"
                       size="sm"
                       onClick={() => updateProjectStatus('planning')}
                       className="text-xs"
@@ -401,23 +401,23 @@ export function ProjectPageClient({ project: initialProject }: ProjectPageClient
               <Target className="h-16 w-16 mx-auto mb-6 text-yellow-500 animate-pulse" />
               <CardTitle className="mb-4 text-xl">Creating Content Blueprint</CardTitle>
               <p className="text-muted-foreground mb-6 leading-relaxed">
-                Based on the research, we're creating a detailed content blueprint 
+                Based on the research, we're creating a detailed content blueprint
                 with sections, key points, and writing strategy.
               </p>
               <div className="space-y-3">
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div className="bg-yellow-600 h-2 rounded-full animate-pulse" style={{ width: '80%' }}></div>
+                <div className="w-full bg-surface-2 rounded-full h-2">
+                  <div className="bg-yellow-500 h-2 rounded-full animate-pulse" style={{ width: '80%' }}></div>
                 </div>
                 <p className="text-sm text-muted-foreground">
                   Generating content outline...
                 </p>
-                
+
                 {/* Development mode: Show manual progress button */}
                 {process.env.NODE_ENV === 'development' && (
                   <div className="mt-6 pt-4 border-t">
                     <p className="text-xs text-muted-foreground mb-2">Development Mode:</p>
-                    <Button 
-                      variant="outline" 
+                    <Button
+                      variant="outline"
                       size="sm"
                       onClick={() => updateProjectStatus('writing')}
                       className="text-xs"
@@ -435,12 +435,12 @@ export function ProjectPageClient({ project: initialProject }: ProjectPageClient
               <ExternalLink className="h-16 w-16 mx-auto mb-6 text-red-500" />
               <CardTitle className="mb-4 text-xl text-red-600">Processing Error</CardTitle>
               <p className="text-muted-foreground mb-6 leading-relaxed">
-                An error occurred while processing your project. This could be due to 
+                An error occurred while processing your project. This could be due to
                 network issues, API limits, or invalid competitor URLs.
               </p>
               <div className="space-y-3">
-                <Button 
-                  size="lg" 
+                <Button
+                  size="lg"
                   className="w-full"
                   onClick={retryProcessing}
                   disabled={isStartingResearch}
@@ -468,10 +468,10 @@ export function ProjectPageClient({ project: initialProject }: ProjectPageClient
             <CardContent className="text-center max-w-md">
               <Clock className="h-16 w-16 mx-auto mb-6 text-amber-500 animate-pulse" />
               <CardTitle className="mb-4 text-xl text-amber-600">Temporarily Paused</CardTitle>
-              
+
               {/* Use the ProjectStatusMonitor for detailed status updates */}
               <div className="mb-6">
-                <ProjectStatusMonitor 
+                <ProjectStatusMonitor
                   projectId={project.id}
                   onStatusChange={(status) => {
                     // Update local project state when status changes
@@ -479,15 +479,15 @@ export function ProjectPageClient({ project: initialProject }: ProjectPageClient
                   }}
                 />
               </div>
-              
+
               <div className="space-y-3">
-                <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
-                  <p className="text-sm text-amber-800">
-                    <strong>⚠️ Rate Limited:</strong> We're currently on the Free Tier. 
+                <div className="p-3 bg-amber-500/10 rounded-lg border border-amber-500/30">
+                  <p className="text-sm text-amber-400">
+                    <strong>⚠️ Rate Limited:</strong> We're currently on the Free Tier.
                     Your request will resume automatically in ~60 seconds.
                   </p>
                 </div>
-                
+
                 <p className="text-xs text-muted-foreground">
                   This is normal and your project will continue processing automatically.
                 </p>

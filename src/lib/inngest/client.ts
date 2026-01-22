@@ -27,7 +27,7 @@ export type InngestEvents = {
       upgradeDate: string;
     };
   };
-  
+
   // Project lifecycle events
   'project/created': {
     data: {
@@ -45,6 +45,19 @@ export type InngestEvents = {
       projectId: string;
       competitorUrls: string[];
       brandDocumentPath?: string;
+    };
+  };
+  'project/modular-research-started': {
+    data: {
+      userId: string;
+      projectId: string;
+      topic: string;
+      tone: string;
+      format: string;
+      industry?: string;
+      targetAudience?: string;
+      brandDocumentPath?: string;
+      securityMetadata?: any;
     };
   };
   'project/blueprint-generated': {
@@ -82,7 +95,18 @@ export type InngestEvents = {
       completionTime: number;
     };
   };
-  
+
+  // AEO Blog generation events
+  'aeo/blog.requested': {
+    data: {
+      userId: string;
+      projectId: string;
+      title: string;
+      keyword: string;
+      facts?: string;
+    };
+  };
+
   // Content generation events
   'content/generate': {
     data: {
@@ -152,7 +176,7 @@ export type InngestEvents = {
       cost: number;
     };
   };
-  
+
   // Quota and billing events
   'quota/exceeded': {
     data: {
@@ -173,7 +197,7 @@ export type InngestEvents = {
       warningThreshold: number;
     };
   };
-  
+
   // System events
   'system/health-check': {
     data: {
@@ -187,7 +211,7 @@ export type InngestEvents = {
       olderThan: string;
     };
   };
-  
+
   // Error and monitoring events
   'error/ai-provider-failed': {
     data: {
@@ -238,12 +262,12 @@ export const RETRY_CONFIG = {
     backoff: 'exponential',
     retryIf: (error: any) => {
       // Retry on rate limits, timeouts, and temporary failures
-      return error.status === 429 || 
-             error.status === 502 || 
-             error.status === 503 || 
-             error.status === 504 ||
-             error.code === 'ECONNRESET' ||
-             error.code === 'ETIMEDOUT';
+      return error.status === 429 ||
+        error.status === 502 ||
+        error.status === 503 ||
+        error.status === 504 ||
+        error.code === 'ECONNRESET' ||
+        error.code === 'ETIMEDOUT';
     },
   },
   'database-operation': {
@@ -268,19 +292,19 @@ export const RETRY_CONFIG = {
 
 // Idempotency key generators for different operations
 export const generateIdempotencyKey = {
-  contentGeneration: (userId: string, projectId: string, sectionId?: string) => 
+  contentGeneration: (userId: string, projectId: string, sectionId?: string) =>
     `content_gen_${userId}_${projectId}_${sectionId || 'main'}_${Date.now()}`,
-  
-  research: (userId: string, projectId: string, urls: string[]) => 
+
+  research: (userId: string, projectId: string, urls: string[]) =>
     `research_${userId}_${projectId}_${urls.sort().join('_').slice(0, 50)}`,
-  
-  blueprint: (userId: string, projectId: string, version: number = 1) => 
+
+  blueprint: (userId: string, projectId: string, version: number = 1) =>
     `blueprint_${userId}_${projectId}_v${version}`,
-  
-  aiRequest: (operation: string, userId: string, contentHash: string) => 
+
+  aiRequest: (operation: string, userId: string, contentHash: string) =>
     `ai_${operation}_${userId}_${contentHash.slice(0, 16)}`,
-  
-  userOperation: (userId: string, operation: string, timestamp?: number) => 
+
+  userOperation: (userId: string, operation: string, timestamp?: number) =>
     `user_${userId}_${operation}_${timestamp || Date.now()}`,
 } as const;
 

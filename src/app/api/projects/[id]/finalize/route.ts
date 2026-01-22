@@ -12,32 +12,32 @@ const FinalizeRequestSchema = z.object({
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const projectId = params.id;
-    
+    const { id: projectId } = await params;
+
     // Validate request body
     const body = await request.json().catch(() => ({}));
     const { force } = FinalizeRequestSchema.parse(body);
-    
+
     // Get authenticated user
     const supabase = await createRouteClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
+
     if (authError || !user) {
       return NextResponse.json(
-        { 
-          success: false, 
-          error: { 
-            code: 'UNAUTHORIZED', 
-            message: 'Authentication required' 
-          } 
+        {
+          success: false,
+          error: {
+            code: 'UNAUTHORIZED',
+            message: 'Authentication required'
+          }
         },
         { status: 401 }
       );
     }
-    
+
     // Check user quota for finalization operations
     const quotaCheck = await checkQuota(user.id, 'free', 'contentGeneration'); // Get actual plan from DB
     if (!quotaCheck.allowed) {
@@ -57,7 +57,7 @@ export async function POST(
         { status: 429 }
       );
     }
-    
+
     // Get project and validate ownership
     const { data: project, error: projectError } = await supabase
       .from('projects')
@@ -65,7 +65,7 @@ export async function POST(
       .eq('id', projectId)
       .eq('user_id', user.id)
       .single();
-    
+
     if (projectError || !project) {
       return NextResponse.json(
         {
@@ -78,7 +78,7 @@ export async function POST(
         { status: 404 }
       );
     }
-    
+
     // Validate project state
     if (!project.generated_content) {
       return NextResponse.json(
@@ -92,7 +92,7 @@ export async function POST(
         { status: 400 }
       );
     }
-    
+
     if (!project.blueprint) {
       return NextResponse.json(
         {
@@ -105,7 +105,7 @@ export async function POST(
         { status: 400 }
       );
     }
-    
+
     // Check if already finalized (unless force is true)
     if (project.status === 'completed' && !force) {
       return NextResponse.json(
@@ -119,7 +119,7 @@ export async function POST(
         { status: 400 }
       );
     }
-    
+
     // Check if currently being finalized
     if (project.status === 'finalizing') {
       return NextResponse.json(
@@ -133,7 +133,7 @@ export async function POST(
         { status: 409 }
       );
     }
-    
+
     // Trigger manual finalization workflow
     const eventData = {
       name: 'content/manual-finalize' as const,
@@ -142,12 +142,12 @@ export async function POST(
         projectId: projectId,
       }
     };
-    
+
     const { ids } = await inngest.send(eventData);
-    
+
     // Increment usage quota
     await incrementUsage(user.id, 'contentGeneration');
-    
+
     // Log the finalization request
     await supabase
       .from('usage_analytics')
@@ -164,7 +164,7 @@ export async function POST(
           hasBlueprint: !!project.blueprint
         }
       });
-    
+
     return NextResponse.json({
       success: true,
       data: {
@@ -177,10 +177,10 @@ export async function POST(
         contentLength: project.generated_content?.length || 0
       }
     });
-    
+
   } catch (error) {
     console.error('Finalization API error:', error);
-    
+
     // Handle validation errors
     if (error instanceof z.ZodError) {
       return NextResponse.json(
@@ -195,7 +195,7 @@ export async function POST(
         { status: 400 }
       );
     }
-    
+
     // Handle Inngest errors
     if (error instanceof Error && error.message.includes('Inngest')) {
       return NextResponse.json(
@@ -210,7 +210,7 @@ export async function POST(
         { status: 500 }
       );
     }
-    
+
     return NextResponse.json(
       {
         success: false,
@@ -228,28 +228,28 @@ export async function POST(
 // GET endpoint to check finalization status
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const projectId = params.id;
-    
+    const { id: projectId } = await params;
+
     // Get authenticated user
     const supabase = await createRouteClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
+
     if (authError || !user) {
       return NextResponse.json(
-        { 
-          success: false, 
-          error: { 
-            code: 'UNAUTHORIZED', 
-            message: 'Authentication required' 
-          } 
+        {
+          success: false,
+          error: {
+            code: 'UNAUTHORIZED',
+            message: 'Authentication required'
+          }
         },
         { status: 401 }
       );
     }
-    
+
     // Get project finalization status
     const { data: project, error: projectError } = await supabase
       .from('projects')
@@ -257,7 +257,7 @@ export async function GET(
       .eq('id', projectId)
       .eq('user_id', user.id)
       .single();
-    
+
     if (projectError || !project) {
       return NextResponse.json(
         {
@@ -270,19 +270,19 @@ export async function GET(
         { status: 404 }
       );
     }
-    
+
     // Calculate finalization metrics
     const hasContent = !!project.generated_content;
-    const hasEnhancedSEO = project.seo_metadata && 
-      typeof project.seo_metadata === 'object' && 
+    const hasEnhancedSEO = project.seo_metadata &&
+      typeof project.seo_metadata === 'object' &&
       'faqData' in project.seo_metadata;
-    
-    const wordCount = project.generated_content ? 
+
+    const wordCount = project.generated_content ?
       project.generated_content.split(' ').length : 0;
-    
-    const faqCount = hasEnhancedSEO && project.seo_metadata.faqData ? 
+
+    const faqCount = hasEnhancedSEO && project.seo_metadata.faqData ?
       project.seo_metadata.faqData.length : 0;
-    
+
     return NextResponse.json({
       success: true,
       data: {
@@ -297,17 +297,17 @@ export async function GET(
           wordCount,
           hasEnhancedSEO,
           faqCount,
-          seoScore: hasEnhancedSEO && project.seo_metadata.seoScore ? 
+          seoScore: hasEnhancedSEO && project.seo_metadata.seoScore ?
             project.seo_metadata.seoScore : null,
-          readabilityScore: hasEnhancedSEO && project.seo_metadata.readabilityScore ? 
+          readabilityScore: hasEnhancedSEO && project.seo_metadata.readabilityScore ?
             project.seo_metadata.readabilityScore : null
         }
       }
     });
-    
+
   } catch (error) {
     console.error('Finalization status API error:', error);
-    
+
     return NextResponse.json(
       {
         success: false,

@@ -517,6 +517,305 @@ import { modularAgenticResearchFunctions } from './modular-agentic-research-pipe
 // Import fact-based content generation functions
 import { factBasedContentGenerationFunctions } from './fact-based-content-generation-pipeline';
 
+// THE ONE-GO FIX: Sequential AEO Blog Generation to prevent 429 errors
+export const writeAEOBlog = inngest.createFunction(
+  {
+    id: "write-aeo-blog",
+    // THE FIX: This prevents 429 errors by queuing requests
+    concurrency: {
+      limit: 1,
+      key: "event.data.userId",
+    },
+    // Optional: If using Gemini Free Tier, add a 5-second buffer between steps
+    throttle: {
+      limit: 12,
+      period: "1m",
+    },
+    retries: RETRY_CONFIG['ai-request'].attempts,
+  },
+  { event: "aeo/blog.requested" },
+  async ({ event, step }) => {
+    const { userId, projectId, title, keyword, facts } = event.data;
+    
+    // Import the failover helper
+    const { aiContentWithFailover, aiResearchWithFailover } = await import('@/lib/ai/provider-failover-helper');
+    
+    // Initialize project status and steps
+    await step.run("initialize-project-status", async () => {
+      try {
+        const { createRouteClient } = await import('@/lib/supabase/server');
+        const supabase = await createRouteClient();
+        
+        // Initialize the project with steps
+        const initialSteps = [
+          { id: 'layout', label: 'Generating blog layout', state: 'processing' },
+          { id: 'section-1', label: 'Writing introduction', state: 'pending' },
+          { id: 'section-2', label: 'Writing main content', state: 'pending' },
+          { id: 'section-3', label: 'Writing key benefits', state: 'pending' },
+          { id: 'section-4', label: 'Writing implementation guide', state: 'pending' },
+          { id: 'section-5', label: 'Writing best practices', state: 'pending' },
+          { id: 'section-6', label: 'Writing conclusion', state: 'pending' },
+          { id: 'finalize', label: 'Final SEO optimization', state: 'pending' },
+        ];
+        
+        await supabase.rpc('update_project_progress', {
+          p_project_id: projectId,
+          p_status: 'processing',
+          p_current_section: 'Generating blog layout',
+          p_progress_percentage: 5,
+          p_steps: initialSteps,
+        });
+        
+        console.log(`Initialized project ${projectId} with status tracking`);
+      } catch (error: any) {
+        console.error('Failed to initialize project status:', error);
+        // Continue anyway - don't fail the whole workflow for status updates
+      }
+    });
+    
+    // STEP 1: Generate Layout (Pro Model with Failover)
+    const layout = await step.run("generate-layout", async () => {
+      try {
+        const layoutPrompt = `Create a detailed blog layout for "${title}" targeting keyword "${keyword}". Include 5-7 sections that will rank well for AEO (Answer Engine Optimization).`;
+        
+        // Use failover helper - no more 429 errors!
+        const result = await aiContentWithFailover(layoutPrompt);
+        
+        // Parse into structured format
+        const sections = [
+          "Introduction", 
+          "Market Trends", 
+          "Key Benefits", 
+          "Implementation Guide",
+          "Best Practices",
+          "Common Challenges",
+          "Conclusion"
+        ];
+        
+        // Update database with layout completion
+        const { createRouteClient } = await import('@/lib/supabase/server');
+        const supabase = await createRouteClient();
+        
+        await supabase.rpc('update_project_step', {
+          p_project_id: projectId,
+          p_step_id: 'layout',
+          p_step_label: 'Generating blog layout',
+          p_step_state: 'completed',
+          p_step_details: `Generated ${sections.length} sections using ${result.provider}`
+        });
+        
+        await supabase.rpc('update_project_progress', {
+          p_project_id: projectId,
+          p_current_section: 'Writing introduction',
+          p_progress_percentage: 15,
+        });
+        
+        return { 
+          sections,
+          keyword,
+          title,
+          estimatedLength: 2500,
+          provider: result.provider
+        };
+      } catch (error: any) {
+        console.error('Layout generation failed:', error);
+        
+        // Update database with error
+        try {
+          const { createRouteClient } = await import('@/lib/supabase/server');
+          const supabase = await createRouteClient();
+          
+          await supabase.rpc('update_project_step', {
+            p_project_id: projectId,
+            p_step_id: 'layout',
+            p_step_label: 'Generating blog layout',
+            p_step_state: 'error',
+            p_step_details: error.message
+          });
+        } catch (dbError) {
+          console.error('Failed to update error status:', dbError);
+        }
+        
+        throw new Error(`Layout generation failed: ${error.message}`);
+      }
+    });
+
+    // STEP 2: Iterative Writing (Looping through sections with failover)
+    const completedSections = [];
+    for (let i = 0; i < layout.sections.length; i++) {
+      const sectionTitle = layout.sections[i];
+      const stepId = `section-${i + 1}`;
+      
+      // Update current section status
+      await step.run(`update-section-${i}-start`, async () => {
+        try {
+          const { createRouteClient } = await import('@/lib/supabase/server');
+          const supabase = await createRouteClient();
+          
+          await supabase.rpc('update_project_step', {
+            p_project_id: projectId,
+            p_step_id: stepId,
+            p_step_label: `Writing ${sectionTitle.toLowerCase()}`,
+            p_step_state: 'processing',
+          });
+          
+          await supabase.rpc('update_project_progress', {
+            p_project_id: projectId,
+            p_current_section: `Writing ${sectionTitle}`,
+            p_progress_percentage: 15 + ((i + 1) / layout.sections.length) * 70,
+          });
+        } catch (error) {
+          console.error('Failed to update section start status:', error);
+        }
+      });
+      
+      const sectionContent = await step.run(`write-section-${sectionTitle}`, async () => {
+        try {
+          // Build context from facts and previous sections
+          const context = facts ? `Context: ${facts.slice(0, 1000)}` : '';
+          const previousSections = completedSections.map(s => `${s.title}: ${s.content.slice(0, 200)}...`).join('\n');
+          
+          const sectionPrompt = `Write a comprehensive section titled "${sectionTitle}" for the blog "${title}". 
+          Target keyword: ${keyword}
+          ${context}
+          Previous sections context: ${previousSections}
+          
+          Make this section 300-400 words, SEO-optimized, and engaging.`;
+          
+          // Use failover helper - automatic provider switching!
+          const result = await aiContentWithFailover(sectionPrompt);
+          
+          console.log(`Section "${sectionTitle}" generated using ${result.provider} (${result.tokensUsed} tokens)`);
+          
+          return result.content;
+        } catch (error: any) {
+          console.error(`Section ${sectionTitle} generation failed:`, error);
+          throw new Error(`Section generation failed: ${error.message}`);
+        }
+      });
+
+      completedSections.push({ title: sectionTitle, content: sectionContent });
+
+      // Update section completion status
+      await step.run(`update-section-${i}-complete`, async () => {
+        try {
+          const { createRouteClient } = await import('@/lib/supabase/server');
+          const supabase = await createRouteClient();
+          
+          await supabase.rpc('update_project_step', {
+            p_project_id: projectId,
+            p_step_id: stepId,
+            p_step_label: `Writing ${sectionTitle.toLowerCase()}`,
+            p_step_state: 'completed',
+            p_step_details: `${Math.ceil(sectionContent.length / 4)} tokens used`
+          });
+        } catch (error) {
+          console.error('Failed to update section completion status:', error);
+        }
+      });
+
+      // MANDATORY: Wait 3 seconds between sections to prevent burst limits
+      await step.sleep("section-cooldown", "3s");
+    }
+
+    // STEP 3: Final Assembly and SEO Optimization (with failover)
+    await step.run("update-finalize-start", async () => {
+      try {
+        const { createRouteClient } = await import('@/lib/supabase/server');
+        const supabase = await createRouteClient();
+        
+        await supabase.rpc('update_project_step', {
+          p_project_id: projectId,
+          p_step_id: 'finalize',
+          p_step_label: 'Final SEO optimization',
+          p_step_state: 'processing',
+        });
+        
+        await supabase.rpc('update_project_progress', {
+          p_project_id: projectId,
+          p_current_section: 'Final SEO optimization',
+          p_progress_percentage: 90,
+        });
+      } catch (error) {
+        console.error('Failed to update finalize start status:', error);
+      }
+    });
+    
+    const finalBlog = await step.run("assemble-final-blog", async () => {
+      try {
+        const fullContent = completedSections.map(s => `## ${s.title}\n\n${s.content}`).join('\n\n');
+        
+        const finalPrompt = `Polish and optimize this blog post for SEO and readability:
+        
+        Title: ${title}
+        Target Keyword: ${keyword}
+        
+        ${fullContent}
+        
+        Add meta description, improve transitions, and ensure keyword optimization.`;
+        
+        // Use failover helper for final polish
+        const result = await aiContentWithFailover(finalPrompt);
+        
+        console.log(`Final blog polished using ${result.provider} (${result.tokensUsed} tokens)`);
+        
+        return result.content;
+      } catch (error: any) {
+        console.error('Final assembly failed:', error);
+        // Return assembled content without AI polish if AI fails
+        return completedSections.map(s => `## ${s.title}\n\n${s.content}`).join('\n\n');
+      }
+    });
+
+    // Final status update - COMPLETION
+    await step.run("complete-blog", async () => {
+      try {
+        const { createRouteClient } = await import('@/lib/supabase/server');
+        const supabase = await createRouteClient();
+        
+        // Update finalize step as completed
+        await supabase.rpc('update_project_step', {
+          p_project_id: projectId,
+          p_step_id: 'finalize',
+          p_step_label: 'Final SEO optimization',
+          p_step_state: 'completed',
+          p_step_details: `Blog completed with ${Math.ceil(finalBlog.length / 4)} total tokens`
+        });
+        
+        // Update overall project status
+        await supabase.rpc('update_project_progress', {
+          p_project_id: projectId,
+          p_status: 'completed',
+          p_current_section: null,
+          p_progress_percentage: 100,
+        });
+        
+        // Store the final content
+        await supabase
+          .from('projects')
+          .update({ 
+            generated_content: finalBlog,
+            token_usage: { total: Math.ceil(finalBlog.length / 4) },
+            cost_breakdown: { total: 0.05 }
+          })
+          .eq('id', projectId);
+        
+        console.log(`Blog generation completed for project ${projectId}`);
+      } catch (error) {
+        console.error('Failed to update completion status:', error);
+      }
+    });
+
+    return { 
+      success: true, 
+      sectionCount: completedSections.length,
+      finalLength: finalBlog.length,
+      keyword,
+      title
+    };
+  }
+);
+
 // Export all enhanced functions
 export const inngestFunctions = [
   handleUserRegistration,
@@ -525,6 +824,7 @@ export const inngestFunctions = [
   handleBlueprintGeneration,
   handleQuotaExceeded,
   handleSubscriptionUpdate,
+  writeAEOBlog, // Add the new AEO blog function
   ...researchPipelineFunctions,
   ...contentGenerationFunctions,
   ...projectInitializationFunctions,

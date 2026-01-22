@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { createClientSupabaseClient } from '@/lib/supabase/client';
+import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -17,7 +17,7 @@ export function UserProfile({ user }: UserProfileProps) {
   const [loading, setLoading] = useState(false);
   const [fullName, setFullName] = useState(user.user_metadata?.full_name || '');
   const [email, setEmail] = useState(user.email || '');
-  const supabase = createClientSupabaseClient();
+  const supabase = createClient();
 
   const updateProfile = async () => {
     try {
