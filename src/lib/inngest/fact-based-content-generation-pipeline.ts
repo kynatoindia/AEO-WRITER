@@ -1,15 +1,21 @@
 import { inngest, CONCURRENCY_LIMITS, RETRY_CONFIG, generateIdempotencyKey } from './client';
-import { redis, CACHE_KEYS } from '@/lib/redis/client';
+import { redis } from '@/lib/redis/client';
 import { atomicFactsExtractor } from '@/lib/services/atomic-facts-extractor';
-import { generateAIText, streamAIText, generateStructuredOutput } from '@/lib/ai/gateway';
-import { createRouteClient } from '@/lib/supabase/server';
+import { generateAIText, generateStructuredOutput } from '@/lib/ai/gateway';
+import { createClient } from '@supabase/supabase-js';
 import { z } from 'zod';
-import type {
-  ContentBlueprint,
-  ContentSection,
-  SEOMetadata,
-  Project
-} from '@/lib/types';
+import type { Project } from '@/lib/types';
+
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
+
+const FAST_PIPELINE_MODE = process.env.AEO_FAST_MODE !== 'false';
+const MAX_GENERATION_SECTIONS = Number.isFinite(Number(process.env.AEO_MAX_SECTIONS))
+  ? Math.max(2, Number(process.env.AEO_MAX_SECTIONS))
+  : (FAST_PIPELINE_MODE ? 4 : 6);
+const SECTION_WORD_TARGET = FAST_PIPELINE_MODE ? '220-320' : '300-500';
 
 // Schema for fact-based blueprint generation
 const FactBasedBlueprintSchema = z.object({
@@ -51,6 +57,233 @@ const FactBasedBlueprintSchema = z.object({
   })
 });
 
+type FactBasedBlueprint = z.infer<typeof FactBasedBlueprintSchema>;
+type FactType = 'statistic' | 'process' | 'definition' | 'insight' | 'claim' | 'example' | 'quote' | 'technical';
+type FactRecord = {
+  id?: string;
+  fact?: string;
+  category?: string;
+  keywords?: string[];
+  confidence?: number;
+  relevanceScore?: number;
+};
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is string => typeof entry === 'string');
+}
+
+function wordsFromTopic(topic: string): string[] {
+  return topic
+    .toLowerCase()
+    .replace(/[^\w\s]/g, ' ')
+    .split(/\s+/)
+    .filter((word) => word.length > 2)
+    .slice(0, 6);
+}
+
+function buildFallbackFactBasedBlueprint(
+  topic: string,
+  tone: string,
+  format: string,
+  allFacts: FactRecord[],
+  researchData: unknown
+): FactBasedBlueprint {
+  const summary = isObject(researchData) && isObject(researchData.researchSummary)
+    ? researchData.researchSummary
+    : undefined;
+  const summaryKeywords = summary ? toStringArray(summary.targetKeywords) : [];
+
+  const factKeywords = allFacts
+    .flatMap((fact) => Array.isArray(fact.keywords) ? fact.keywords : [])
+    .filter((keyword): keyword is string => typeof keyword === 'string')
+    .map((keyword) => keyword.trim())
+    .filter(Boolean);
+
+  const keywordSet = [...new Set([...summaryKeywords, ...factKeywords, ...wordsFromTopic(topic), topic])];
+  const targetKeywords = keywordSet.slice(0, 10);
+  const focusKeyword = targetKeywords[0] || topic;
+
+  const sections = [
+    {
+      id: 'fb_intro',
+      heading: `What ${topic} Is and Why It Matters`,
+      goal: `Establish context and core concepts for ${topic}.`,
+      subSections: [
+        {
+          id: 'fb_intro_1',
+          heading: 'Core Definition',
+          keyPoints: ['Clear definition', 'Business relevance', 'Current landscape'],
+          requiredFactTypes: ['definition', 'insight'] as FactType[],
+        },
+        {
+          id: 'fb_intro_2',
+          heading: 'Key Signals',
+          keyPoints: ['Major indicators', 'Notable benchmarks'],
+          requiredFactTypes: ['statistic', 'insight'] as FactType[],
+        },
+      ],
+      contentElements: [{ type: 'direct-answer' as const, properties: { intent: 'overview' } }],
+      factRequirements: {
+        minimumFacts: 3,
+        preferredCategories: ['definition', 'insight', 'statistic'],
+        confidenceThreshold: 60,
+        relevanceThreshold: 55,
+      },
+      order: 1,
+    },
+    {
+      id: 'fb_strategy',
+      heading: `${topic} Strategy Framework`,
+      goal: `Provide a practical strategy framework for ${topic}.`,
+      subSections: [
+        {
+          id: 'fb_strategy_1',
+          heading: 'Framework Components',
+          keyPoints: ['Planning pillars', 'Execution model', 'Priority setting'],
+          requiredFactTypes: ['process', 'insight'] as FactType[],
+        },
+        {
+          id: 'fb_strategy_2',
+          heading: 'Decision Criteria',
+          keyPoints: ['How to choose tactics', 'Trade-off guidance'],
+          requiredFactTypes: ['claim', 'example'] as FactType[],
+        },
+      ],
+      contentElements: [{ type: 'bullet-points' as const, properties: { style: 'checklist' } }],
+      factRequirements: {
+        minimumFacts: 4,
+        preferredCategories: ['process', 'insight', 'example'],
+        confidenceThreshold: 65,
+        relevanceThreshold: 60,
+      },
+      order: 2,
+    },
+    {
+      id: 'fb_execution',
+      heading: `How to Execute ${topic} Step by Step`,
+      goal: 'Give actionable implementation guidance.',
+      subSections: [
+        {
+          id: 'fb_execution_1',
+          heading: 'Preparation',
+          keyPoints: ['Inputs needed', 'Setup checklist'],
+          requiredFactTypes: ['process', 'technical'] as FactType[],
+        },
+        {
+          id: 'fb_execution_2',
+          heading: 'Execution Workflow',
+          keyPoints: ['Operational sequence', 'Milestones'],
+          requiredFactTypes: ['process', 'example'] as FactType[],
+        },
+      ],
+      contentElements: [{ type: 'code-block' as const, properties: { label: 'workflow' } }],
+      factRequirements: {
+        minimumFacts: 4,
+        preferredCategories: ['process', 'technical', 'example'],
+        confidenceThreshold: 65,
+        relevanceThreshold: 60,
+      },
+      order: 3,
+    },
+    {
+      id: 'fb_comparison',
+      heading: `${topic} Options and Comparisons`,
+      goal: 'Compare approaches and highlight trade-offs.',
+      subSections: [
+        {
+          id: 'fb_comparison_1',
+          heading: 'Approach Comparison',
+          keyPoints: ['Pros and cons', 'When each approach works best'],
+          requiredFactTypes: ['statistic', 'claim', 'example'] as FactType[],
+        },
+      ],
+      contentElements: [{ type: 'comparison-table' as const, properties: { columns: ['Option', 'Strength', 'Risk'] } }],
+      factRequirements: {
+        minimumFacts: 3,
+        preferredCategories: ['statistic', 'claim', 'example'],
+        confidenceThreshold: 60,
+        relevanceThreshold: 55,
+      },
+      order: 4,
+    },
+    {
+      id: 'fb_pitfalls',
+      heading: `Common ${topic} Mistakes and Fixes`,
+      goal: 'Surface frequent pitfalls with corrective actions.',
+      subSections: [
+        {
+          id: 'fb_pitfalls_1',
+          heading: 'Frequent Pitfalls',
+          keyPoints: ['Top mistakes', 'Root causes'],
+          requiredFactTypes: ['claim', 'insight'] as FactType[],
+        },
+        {
+          id: 'fb_pitfalls_2',
+          heading: 'Corrective Actions',
+          keyPoints: ['How to recover', 'Prevention checklist'],
+          requiredFactTypes: ['process', 'example'] as FactType[],
+        },
+      ],
+      contentElements: [{ type: 'bullet-points' as const, properties: { style: 'warnings' } }],
+      factRequirements: {
+        minimumFacts: 3,
+        preferredCategories: ['insight', 'claim', 'process'],
+        confidenceThreshold: 60,
+        relevanceThreshold: 55,
+      },
+      order: 5,
+    },
+    {
+      id: 'fb_faq',
+      heading: `${topic} FAQs`,
+      goal: 'Answer high-intent user questions.',
+      subSections: [
+        {
+          id: 'fb_faq_1',
+          heading: 'Most Asked Questions',
+          keyPoints: ['Clarify common concerns', 'Address practical objections'],
+          requiredFactTypes: ['definition', 'insight', 'example'] as FactType[],
+        },
+      ],
+      contentElements: [{ type: 'faq' as const, properties: { minQuestions: 5 } }],
+      factRequirements: {
+        minimumFacts: 3,
+        preferredCategories: ['definition', 'insight', 'example'],
+        confidenceThreshold: 55,
+        relevanceThreshold: 50,
+      },
+      order: 6,
+    },
+  ];
+
+  const sectionCount = Math.max(1, sections.length);
+  const factsPerSection = Math.max(1, Math.floor(Math.max(allFacts.length, sectionCount) / sectionCount));
+  const estimatedLength = Math.max(2200, sectionCount * 380);
+
+  return {
+    sections,
+    seoMetadata: {
+      title: `${topic}: Practical ${format} Guide`,
+      metaDescription: `Actionable, fact-based ${topic} guide with frameworks, comparisons, and implementation steps in a ${tone} tone.`,
+      targetKeywords: targetKeywords.length > 0 ? targetKeywords : [topic],
+      focusKeyword,
+    },
+    estimatedLength,
+    targetKeywords: targetKeywords.length > 0 ? targetKeywords : [topic],
+    factMappingStrategy: {
+      totalFactsAvailable: allFacts.length,
+      factsPerSection,
+      overlapStrategy: 'moderate',
+      qualityThreshold: 70,
+    },
+  };
+}
+
 // Fact-based content generation strategy workflow
 export const generateFactBasedContentStrategy = inngest.createFunction(
   {
@@ -61,9 +294,9 @@ export const generateFactBasedContentStrategy = inngest.createFunction(
         key: 'event.data.userId',
       },
       {
-        limit: 1,
+        limit: 2,
         scope: "account",
-        key: '"gemini-quota-limit"',
+        key: '"ai-provider-limit"',
       }
     ],
     retries: RETRY_CONFIG['ai-request'].attempts,
@@ -74,59 +307,74 @@ export const generateFactBasedContentStrategy = inngest.createFunction(
 
     const idempotencyKey = generateIdempotencyKey.blueprint(userId, projectId);
 
-    // Check for duplicate strategy requests
-    const duplicateCheck = await step.run('check-duplicate-strategy', async () => {
-      const existingResult = await redis.get(`idempotency:${idempotencyKey}`);
-      return existingResult ? JSON.parse(existingResult as string) : null;
-    });
+    try {
+      // Check for duplicate strategy requests
+      const duplicateCheck = await step.run('check-duplicate-strategy', async () => {
+        const existingResult = await redis.get(`idempotency:${idempotencyKey}`);
+        return existingResult ? JSON.parse(existingResult as string) : null;
+      });
 
-    if (duplicateCheck) {
-      console.log(`Duplicate strategy request detected for ${idempotencyKey}`);
-      return duplicateCheck;
-    }
-
-    // Get project data
-    const projectData = await step.run('fetch-project-data', async () => {
-      const supabase = await createRouteClient();
-
-      const { data: project, error } = await supabase
-        .from('projects')
-        .select('*')
-        .eq('id', projectId)
-        .eq('user_id', userId)
-        .single();
-
-      if (error || !project) {
-        throw new Error(`Project not found: ${error?.message}`);
+      if (duplicateCheck) {
+        console.log(`Duplicate strategy request detected for ${idempotencyKey}`);
+        return duplicateCheck;
       }
 
-      return project as unknown as Project;
-    });
+      await step.run('update-project-status-planning', async () => {
+        await supabaseAdmin
+          .from('projects')
+          .update({
+            status: 'planning',
+            status_message: 'Generating fact-based content blueprint...',
+            current_step: 'Blueprint generation',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', projectId)
+          .eq('user_id', userId);
+      });
 
-    // Extract atomic facts from research data
-    const availableFacts = researchData.factVault?.atomicFacts || [];
-    const brandFacts = researchData.brandAnalysis?.atomicFacts || [];
-    const allFacts = [...availableFacts, ...brandFacts];
+      // Get project data
+      const projectData = await step.run('fetch-project-data', async () => {
+        const supabase = supabaseAdmin;
 
-    console.log(`Generating fact-based strategy using ${allFacts.length} atomic facts`);
+        const { data: project, error } = await supabase
+          .from('projects')
+          .select('*')
+          .eq('id', projectId)
+          .eq('user_id', userId)
+          .single();
 
-    // Generate fact-aware content strategy using GPT-4o
-    const blueprint = await step.run('generate-fact-based-blueprint-strategy', async () => {
-      // Prepare fact summary for strategy generation
-      const factSummary = allFacts
-        .filter(fact => fact.confidence > 70 && fact.relevanceScore > 60)
-        .sort((a, b) => (b.confidence * b.relevanceScore) - (a.confidence * a.relevanceScore))
-        .slice(0, 30) // Use top 30 facts for strategy
-        .map(fact => `[${fact.category}] ${fact.fact} (Confidence: ${fact.confidence}%, Relevance: ${fact.relevanceScore}%)`)
-        .join('\n');
+        if (error || !project) {
+          throw new Error(`Project not found: ${error?.message}`);
+        }
 
-      const factsByCategory = allFacts.reduce((acc, fact) => {
-        if (!acc[fact.category]) acc[fact.category] = 0;
-        acc[fact.category]++;
-        return acc;
-      }, {} as Record<string, number>);
+        return project as unknown as Project;
+      });
 
-      const strategyPrompt = `
+      // Extract atomic facts from research data
+      const availableFacts = researchData.factVault?.atomicFacts || [];
+      const brandFacts = researchData.brandAnalysis?.atomicFacts || [];
+      const allFacts = [...availableFacts, ...brandFacts] as FactRecord[];
+
+      console.log(`Generating fact-based strategy for project ${projectData.id} using ${allFacts.length} atomic facts`);
+
+      // Generate fact-aware content strategy
+      const blueprint = await step.run('generate-fact-based-blueprint-strategy', async () => {
+        // Prepare fact summary for strategy generation
+        const factSummary = allFacts
+          .filter((fact) => (fact.confidence || 0) > 70 && (fact.relevanceScore || 0) > 60)
+          .sort((a, b) => ((b.confidence || 0) * (b.relevanceScore || 0)) - ((a.confidence || 0) * (a.relevanceScore || 0)))
+          .slice(0, 30)
+          .map((fact) => `[${fact.category}] ${fact.fact} (Confidence: ${fact.confidence}%, Relevance: ${fact.relevanceScore}%)`)
+          .join('\n');
+
+        const factsByCategory = allFacts.reduce((acc, fact) => {
+          const category = fact.category || 'uncategorized';
+          if (!acc[category]) acc[category] = 0;
+          acc[category]++;
+          return acc;
+        }, {} as Record<string, number>);
+
+        const strategyPrompt = `
         Create a comprehensive content strategy for a ${format} about "${topic}" with a ${tone} tone.
         This strategy must be FACT-BASED using the atomic facts extracted from competitor research.
         
@@ -142,7 +390,7 @@ export const generateFactBasedContentStrategy = inngest.createFunction(
         - Quality Score: ${researchData.factVault?.extractionMetrics?.qualityScore || 0}/100
         
         STRATEGY REQUIREMENTS:
-        1. Create 5-8 main sections that maximize use of available atomic facts
+        1. Create ${FAST_PIPELINE_MODE ? '4-6' : '5-8'} main sections that maximize use of available atomic facts
         2. Each section should specify required fact types and minimum fact count
         3. Map facts to sections based on relevance and category
         4. Ensure comprehensive coverage using fact-based evidence
@@ -161,149 +409,198 @@ export const generateFactBasedContentStrategy = inngest.createFunction(
         
         Format: ${format}
         Tone: ${tone}
-        Target Length: 2000-3000 words
+        Target Length: ${FAST_PIPELINE_MODE ? '1400-2200' : '2000-3000'} words
         
         Generate a detailed content blueprint that maps atomic facts to sections for maximum impact.
       `;
 
-      const result = await generateStructuredOutput(
-        strategyPrompt,
-        FactBasedBlueprintSchema,
-        'blueprint',
-        userId
-      );
-
-      return result.object;
-    });
-
-    // Validate and optimize fact mapping
-    const optimizedBlueprint = await step.run('optimize-fact-mapping', async () => {
-      // Ensure each section has adequate fact coverage
-      const optimizedSections = await Promise.all(
-        blueprint.sections.map(async (section) => {
-          // Find relevant facts for this section
-          const sectionFacts = await atomicFactsExtractor.filterFactsForSection(
-            allFacts,
-            section.heading,
-            section.goal,
-            section.subSections.flatMap(sub => sub.keyPoints),
+        try {
+          const result = await generateStructuredOutput(
+            strategyPrompt,
+            FactBasedBlueprintSchema,
+            'blueprint',
             userId
           );
 
-          // Update section with actual fact availability
-          return {
+          return result.object;
+        } catch (structuredError) {
+          console.warn('Structured blueprint generation failed, using deterministic fallback:', structuredError);
+          return buildFallbackFactBasedBlueprint(topic, tone, format, allFacts, researchData);
+        }
+      });
+
+      // Validate and optimize fact mapping
+      const optimizedBlueprint = await step.run('optimize-fact-mapping', async () => {
+        const limitedSections = blueprint.sections
+          .slice(0, MAX_GENERATION_SECTIONS)
+          .map((section, index) => ({
             ...section,
-            factRequirements: {
-              ...section.factRequirements,
-              availableFacts: sectionFacts.length,
-              factIds: sectionFacts.map(fact => fact.id)
-            }
-          };
-        })
-      );
+            order: index + 1,
+          }));
 
-      return {
-        ...blueprint,
-        sections: optimizedSections,
-        factMappingStrategy: {
-          ...blueprint.factMappingStrategy,
-          totalFactsAvailable: allFacts.length,
-          factsPerSection: Math.floor(allFacts.length / blueprint.sections.length),
-          qualityThreshold: 70
-        }
-      };
-    });
+        // Ensure each section has adequate fact coverage
+        const optimizedSections = await Promise.all(
+          limitedSections.map(async (section) => {
+            // Find relevant facts for this section
+            const sectionFacts = await atomicFactsExtractor.filterFactsForSection(
+              allFacts as any,
+              section.heading,
+              section.goal,
+              section.subSections.flatMap((sub) => sub.keyPoints),
+              userId
+            );
 
-    // Store blueprint and create content sections
-    await step.run('store-fact-based-blueprint', async () => {
-      const supabase = await createRouteClient();
+            // Update section with actual fact availability
+            return {
+              ...section,
+              factRequirements: {
+                ...section.factRequirements,
+                availableFacts: sectionFacts.length,
+                factIds: sectionFacts.map((fact) => fact.id)
+              }
+            };
+          })
+        );
 
-      // Update project with fact-based blueprint
-      const { error: projectError } = await supabase
-        .from('projects')
-        .update({
-          blueprint: optimizedBlueprint,
-          status: 'writing',
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', projectId)
-        .eq('user_id', userId);
+        const sectionCount = Math.max(1, optimizedSections.length);
 
-      if (projectError) {
-        throw new Error(`Failed to update project: ${projectError.message}`);
-      }
-
-      // Create content sections with fact mapping
-      const sectionsToInsert = optimizedBlueprint.sections.map(section => ({
-        project_id: projectId,
-        section_order: section.order,
-        heading: section.heading,
-        goal: section.goal,
-        sub_sections: section.subSections,
-        content_elements: section.contentElements.map(el => el.type),
-        fact_requirements: section.factRequirements,
-        status: 'pending' as const
-      }));
-
-      const { error: sectionsError } = await supabase
-        .from('content_sections')
-        .insert(sectionsToInsert);
-
-      if (sectionsError) {
-        throw new Error(`Failed to create sections: ${sectionsError.message}`);
-      }
-
-      // Send real-time update
-      await supabase
-        .channel(`project:${projectId}`)
-        .send({
-          type: 'broadcast',
-          event: 'fact_based_strategy_complete',
-          payload: {
-            projectId,
-            blueprint: optimizedBlueprint,
-            sectionsCount: optimizedBlueprint.sections.length,
-            totalFacts: allFacts.length,
-            status: 'writing'
+        return {
+          ...blueprint,
+          sections: optimizedSections,
+          estimatedLength: Math.max(1200, optimizedSections.length * (FAST_PIPELINE_MODE ? 260 : 380)),
+          factMappingStrategy: {
+            ...blueprint.factMappingStrategy,
+            totalFactsAvailable: allFacts.length,
+            factsPerSection: Math.max(1, Math.floor(allFacts.length / sectionCount)),
+            qualityThreshold: 70
           }
-        });
-    });
+        };
+      });
 
-    // Fan-out: Trigger parallel fact-based content generation
-    await step.run('trigger-fact-based-section-generation', async () => {
-      const fanOutEvents = optimizedBlueprint.sections.map(section => ({
-        name: 'content/fact-based-section-generate' as const,
-        data: {
-          userId,
-          projectId,
-          sectionId: section.id,
-          section,
-          blueprint: optimizedBlueprint,
-          availableFacts: allFacts,
-          priority: 'high' as const
+      // Store blueprint and create content sections
+      await step.run('store-fact-based-blueprint', async () => {
+        const supabase = supabaseAdmin;
+
+        // Update project with fact-based blueprint
+        const { error: projectError } = await supabase
+          .from('projects')
+          .update({
+            blueprint: optimizedBlueprint,
+            status: 'writing',
+            status_message: `Blueprint ready. Generating ${optimizedBlueprint.sections.length} content sections...`,
+            current_step: 'Section generation',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', projectId)
+          .eq('user_id', userId);
+
+        if (projectError) {
+          throw new Error(`Failed to update project: ${projectError.message}`);
         }
-      }));
 
-      await inngest.send(fanOutEvents);
+        // Create content sections with fact mapping
+        const sectionsToInsert = optimizedBlueprint.sections.map((section) => ({
+          project_id: projectId,
+          section_order: section.order,
+          heading: section.heading,
+          goal: section.goal,
+          sub_sections: section.subSections,
+          content_elements: section.contentElements.map((el) => el.type),
+          fact_requirements: section.factRequirements,
+          status: 'pending' as const
+        }));
 
-      console.log(`Triggered ${fanOutEvents.length} fact-based section generation jobs for project ${projectId}`);
-    });
+        const { error: sectionsError } = await supabase
+          .from('content_sections')
+          .insert(sectionsToInsert);
 
-    const result = {
-      success: true,
-      blueprint: optimizedBlueprint,
-      sectionsCount: optimizedBlueprint.sections.length,
-      totalFactsAvailable: allFacts.length,
-      estimatedTokens: optimizedBlueprint.estimatedLength / 4,
-      compressionRatio: researchData.factVault?.extractionMetrics?.compressionRatio || 1,
-      idempotencyKey,
-      timestamp: Date.now(),
-    };
+        if (sectionsError) {
+          throw new Error(`Failed to create sections: ${sectionsError.message}`);
+        }
 
-    // Cache result for idempotency
-    await redis.setex(`idempotency:${idempotencyKey}`, 7200, JSON.stringify(result));
+        // Send real-time update
+        await supabase
+          .channel(`project:${projectId}`)
+          .send({
+            type: 'broadcast',
+            event: 'fact_based_strategy_complete',
+            payload: {
+              projectId,
+              blueprint: optimizedBlueprint,
+              sectionsCount: optimizedBlueprint.sections.length,
+              totalFacts: allFacts.length,
+              status: 'writing'
+            }
+          });
 
-    return result;
+        // Backward-compatible event for existing realtime UI hooks.
+        await supabase
+          .channel(`project:${projectId}`)
+          .send({
+            type: 'broadcast',
+            event: 'strategy_complete',
+            payload: {
+              projectId,
+              blueprint: optimizedBlueprint,
+              sectionsCount: optimizedBlueprint.sections.length,
+              status: 'writing'
+            }
+          });
+      });
+
+      // Fan-out: Trigger parallel fact-based content generation
+      await step.run('trigger-fact-based-section-generation', async () => {
+        const fanOutEvents = optimizedBlueprint.sections.map((section) => ({
+          name: 'content/fact-based-section-generate' as const,
+          data: {
+            userId,
+            projectId,
+            sectionId: section.id,
+            section,
+            blueprint: optimizedBlueprint,
+            availableFacts: allFacts,
+            priority: 'high' as const
+          }
+        }));
+
+        await inngest.send(fanOutEvents);
+
+        console.log(`Triggered ${fanOutEvents.length} fact-based section generation jobs for project ${projectId}`);
+      });
+
+      const result = {
+        success: true,
+        blueprint: optimizedBlueprint,
+        sectionsCount: optimizedBlueprint.sections.length,
+        totalFactsAvailable: allFacts.length,
+        estimatedTokens: optimizedBlueprint.estimatedLength / 4,
+        compressionRatio: researchData.factVault?.extractionMetrics?.compressionRatio || 1,
+        idempotencyKey,
+        timestamp: Date.now(),
+      };
+
+      // Cache result for idempotency
+      await redis.setex(`idempotency:${idempotencyKey}`, 7200, JSON.stringify(result));
+
+      return result;
+    } catch (error) {
+      console.error(`Fact-based strategy generation failed for project ${projectId}:`, error);
+
+      await step.run('mark-strategy-generation-error', async () => {
+        await supabaseAdmin
+          .from('projects')
+          .update({
+            status: 'error',
+            status_message: 'Failed to generate content blueprint. Please retry research.',
+            current_step: 'Blueprint generation failed',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', projectId)
+          .eq('user_id', userId);
+      });
+
+      throw error;
+    }
   }
 );
 
@@ -317,9 +614,9 @@ export const generateFactBasedContentSection = inngest.createFunction(
         key: 'event.data.projectId',
       },
       {
-        limit: 1,
+        limit: 2,
         scope: "account",
-        key: '"gemini-quota-limit"',
+        key: '"ai-provider-limit"',
       }
     ],
     retries: RETRY_CONFIG['ai-request'].attempts,
@@ -333,7 +630,7 @@ export const generateFactBasedContentSection = inngest.createFunction(
     // Check for duplicate section requests
     const duplicateCheck = await step.run('check-duplicate-section', async () => {
       const existingResult = await redis.get(`idempotency:${idempotencyKey}`);
-      return existingResult ? JSON.parse(existingResult) : null;
+      return existingResult ? JSON.parse(existingResult as string) : null;
     });
 
     if (duplicateCheck) {
@@ -343,7 +640,7 @@ export const generateFactBasedContentSection = inngest.createFunction(
 
     // Update section status
     await step.run('update-section-status-writing', async () => {
-      const supabase = await createRouteClient();
+      const supabase = supabaseAdmin;
 
       const { error } = await supabase
         .from('content_sections')
@@ -368,6 +665,19 @@ export const generateFactBasedContentSection = inngest.createFunction(
             status: 'writing'
           }
         });
+
+      await supabase
+        .channel(`project:${projectId}`)
+        .send({
+          type: 'broadcast',
+          event: 'section_started',
+          payload: {
+            projectId,
+            sectionId,
+            heading: section.heading,
+            status: 'writing'
+          }
+        });
     });
 
     // Filter and select relevant atomic facts for this section
@@ -378,7 +688,7 @@ export const generateFactBasedContentSection = inngest.createFunction(
         availableFacts,
         section.heading,
         section.goal,
-        section.subSections.flatMap(sub => sub.keyPoints),
+        section.subSections.flatMap((sub: any) => sub.keyPoints),
         userId
       );
 
@@ -403,7 +713,7 @@ export const generateFactBasedContentSection = inngest.createFunction(
 
     // Get previously written sections for context
     const previousSections = await step.run('get-previous-sections', async () => {
-      const supabase = await createRouteClient();
+      const supabase = supabaseAdmin;
 
       const { data: sections, error } = await supabase
         .from('content_sections')
@@ -439,10 +749,10 @@ export const generateFactBasedContentSection = inngest.createFunction(
         Section Goal: ${section.goal}
         
         Sub-sections to cover:
-        ${section.subSections.map(sub => `- ${sub.heading}: ${sub.keyPoints.join(', ')}`).join('\n')}
-        
+        ${section.subSections.map((sub: any) => `- ${sub.heading}: ${sub.keyPoints.join(', ')}`).join('\n')}
+
         Content Elements to include:
-        ${section.contentElements.map(el => `- ${el.type}: ${JSON.stringify(el.properties)}`).join('\n')}
+        ${section.contentElements.map((el: any) => `- ${el.type}: ${JSON.stringify(el.properties)}`).join('\n')}
         
         ATOMIC FACTS FOR THIS SECTION (${sectionFacts.length} facts):
         ${factContext}
@@ -456,7 +766,7 @@ export const generateFactBasedContentSection = inngest.createFunction(
         ${previousSections.map(prev => `${prev.heading}: ${prev.generated_content?.substring(0, 200)}...`).join('\n')}
         
         FACT-BASED WRITING REQUIREMENTS:
-        1. Write 300-500 words for this section
+        1. Write ${SECTION_WORD_TARGET} words for this section
         2. Use ONLY the provided atomic facts - do not add external information
         3. Cite facts naturally within the content flow
         4. Prioritize high-confidence facts (>80%) for key claims
@@ -499,7 +809,9 @@ export const generateFactBasedContentSection = inngest.createFunction(
           source: fact.source
         })),
         factCount: sectionFacts.length,
-        averageConfidence: Math.round(sectionFacts.reduce((sum, fact) => sum + fact.confidence, 0) / sectionFacts.length),
+        averageConfidence: sectionFacts.length > 0
+          ? Math.round(sectionFacts.reduce((sum, fact) => sum + fact.confidence, 0) / sectionFacts.length)
+          : 0,
         categories: [...new Set(sectionFacts.map(fact => fact.category))]
       };
 
@@ -508,7 +820,7 @@ export const generateFactBasedContentSection = inngest.createFunction(
 
     // Store generated content with fact metadata
     await step.run('store-fact-based-section-content', async () => {
-      const supabase = await createRouteClient();
+      const supabase = supabaseAdmin;
 
       const { error } = await supabase
         .from('content_sections')
@@ -546,11 +858,26 @@ export const generateFactBasedContentSection = inngest.createFunction(
             averageConfidence: validatedContent.averageConfidence
           }
         });
+
+      await supabase
+        .channel(`project:${projectId}`)
+        .send({
+          type: 'broadcast',
+          event: 'section_complete',
+          payload: {
+            projectId,
+            sectionId,
+            heading: section.heading,
+            content: validatedContent.content,
+            status: 'completed',
+            wordCount: validatedContent.content.split(' ').length,
+          }
+        });
     });
 
     // Check if all sections are complete
     await step.run('check-project-completion', async () => {
-      const supabase = await createRouteClient();
+      const supabase = supabaseAdmin;
 
       const { data: sections, error } = await supabase
         .from('content_sections')
@@ -604,9 +931,9 @@ export const factBasedCompletionHandler = inngest.createFunction(
   {
     id: 'fact-based-completion-handler',
     concurrency: {
-      limit: 1,
+      limit: 2,
       scope: "account",
-      key: '"gemini-quota-limit"',
+      key: '"ai-provider-limit"',
     },
     retries: RETRY_CONFIG['database-operation'].attempts,
   },

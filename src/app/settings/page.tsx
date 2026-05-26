@@ -18,8 +18,8 @@ export default async function SettingsPage() {
   return (
     <div className="container mx-auto py-8 px-4 max-w-6xl">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">Account Settings</h1>
-        <p className="text-gray-600 mt-2">
+        <h1 className="text-3xl font-bold text-foreground">Account Settings</h1>
+        <p className="text-muted-foreground mt-2">
           Manage your account settings, security, and preferences.
         </p>
       </div>
@@ -41,19 +41,19 @@ export default async function SettingsPage() {
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-sm font-medium text-gray-700">User ID</label>
-                  <p className="text-sm text-gray-900 font-mono">{user.id}</p>
+                  <label className="text-sm font-medium text-muted-foreground">User ID</label>
+                  <p className="text-sm text-foreground font-mono">{user.id}</p>
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-gray-700">Account Created</label>
-                  <p className="text-sm text-gray-900">
+                  <label className="text-sm font-medium text-muted-foreground">Account Created</label>
+                  <p className="text-sm text-foreground">
                     {new Date(user.created_at).toLocaleDateString()}
                   </p>
                 </div>
               </div>
               <div>
-                <label className="text-sm font-medium text-gray-700">Email Verified</label>
-                <p className="text-sm text-gray-900">
+                <label className="text-sm font-medium text-muted-foreground">Email Verified</label>
+                <p className="text-sm text-foreground">
                   {user.email_confirmed_at ? 'Yes' : 'No'}
                 </p>
               </div>

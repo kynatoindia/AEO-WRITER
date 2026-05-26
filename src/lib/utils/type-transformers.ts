@@ -20,7 +20,7 @@ const SubSectionSchema = z.object({
 
 const ContentElementSchema = z.object({
   type: z.enum(['direct-answer', 'bullet-points', 'comparison-table', 'faq', 'code-block']),
-  properties: z.record(z.unknown())
+  properties: z.record(z.string(), z.unknown())
 });
 
 const ContentSectionSchema = z.object({
@@ -84,10 +84,10 @@ export function transformDatabaseRowToProject(
     competitor_urls: row.competitor_urls,
     tone: row.tone,
     format: row.format,
-    brand_document_path: row.brand_document_path,
-    openai_thread_id: row.openai_thread_id,
+    brand_document_path: row.brand_document_path ?? undefined,
+    openai_thread_id: row.openai_thread_id ?? undefined,
     blueprint,
-    generated_content: row.generated_content,
+    generated_content: row.generated_content ?? undefined,
     seo_metadata: seoMetadata,
     token_usage: tokenUsage,
     cost_breakdown: costBreakdown,
@@ -135,7 +135,7 @@ export function transformProjectToInsert(
   return {
     user_id: project.user_id,
     topic: project.topic,
-    status: project.status,
+    status: project.status as any,
     competitor_urls: project.competitor_urls,
     tone: project.tone,
     format: project.format,
@@ -159,7 +159,7 @@ export function transformProjectToUpdate(
   
   if (project.user_id !== undefined) update.user_id = project.user_id;
   if (project.topic !== undefined) update.topic = project.topic;
-  if (project.status !== undefined) update.status = project.status;
+  if (project.status !== undefined) update.status = project.status as any;
   if (project.competitor_urls !== undefined) update.competitor_urls = project.competitor_urls;
   if (project.tone !== undefined) update.tone = project.tone;
   if (project.format !== undefined) update.format = project.format;

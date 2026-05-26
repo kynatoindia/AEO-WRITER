@@ -563,5 +563,3 @@ class PDFProcessorService {
 // Export singleton instance
 export const pdfProcessor = new PDFProcessorService();
 
-// Export types
-export type { PDFProcessingResult, TextChunk, VectorEmbedding, BrandAnalysis };

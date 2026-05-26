@@ -1,4 +1,6 @@
 import { Metadata } from 'next';
+import Link from 'next/link';
+import { Sparkles } from 'lucide-react';
 
 export const metadata: Metadata = {
   title: 'Authentication - AEO Writer Pro',
@@ -11,11 +13,24 @@ export default function AuthLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
+      {/* Background blobs */}
+      <div className="absolute inset-0 -z-10 pointer-events-none overflow-hidden">
+        <div className="absolute top-[-20%] left-[-10%] w-[55%] h-[55%] bg-gradient-to-br from-blue-600/20 via-indigo-700/15 to-transparent blur-[120px] rounded-full" />
+        <div className="absolute bottom-[-20%] right-[-10%] w-[55%] h-[55%] bg-gradient-to-tl from-purple-600/20 via-violet-700/15 to-transparent blur-[120px] rounded-full" />
+      </div>
+
       <div className="max-w-md w-full space-y-8">
         <div className="text-center">
-          <h1 className="text-3xl font-bold text-gray-900">AEO Writer Pro</h1>
-          <p className="mt-2 text-sm text-gray-600">
+          <Link href="/" className="inline-flex items-center gap-3 group justify-center mb-2">
+            <div className="p-2 rounded-xl bg-gradient-to-br from-primary/20 to-purple-600/10 border border-white/10 group-hover:scale-110 transition-transform duration-300">
+              <div className="w-7 h-7 bg-gradient-to-br from-primary to-purple-600 rounded-lg flex items-center justify-center">
+                <Sparkles className="w-3.5 h-3.5 text-white" />
+              </div>
+            </div>
+            <span className="text-2xl font-bold text-gradient-primary">AEO Writer Pro</span>
+          </Link>
+          <p className="mt-2 text-sm text-muted-foreground">
             AI-powered SEO content generation
           </p>
         </div>

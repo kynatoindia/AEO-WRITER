@@ -20,7 +20,7 @@ export async function POST(req: Request) {
     const validatedData = generateBlogSchema.parse(body);
     
     // 2. Verify user authentication
-    const supabase = createServerClient();
+    const supabase = await createServerClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     
     if (authError || !user) {
@@ -74,7 +74,7 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { 
           error: "Invalid request data",
-          details: error.errors
+          details: error.issues
         }, 
         { status: 400 }
       );

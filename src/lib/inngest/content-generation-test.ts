@@ -43,7 +43,7 @@ export const verifyPipelineStructure = () => {
   
   // Check that all functions have required properties
   requiredFunctions.forEach(funcName => {
-    const func = pipeline[funcName as keyof typeof pipeline];
+    const func = pipeline[funcName as keyof typeof pipeline] as any;
     if (typeof func !== 'object' || !func.id || !func.description) {
       throw new Error(`Function ${funcName} missing required properties`);
     }

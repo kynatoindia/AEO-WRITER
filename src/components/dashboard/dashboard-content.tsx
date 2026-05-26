@@ -6,9 +6,20 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { ProjectCreationForm } from '@/components/project/project-creation-form';
 import { ProjectStatusMonitor } from '@/components/project/project-status-monitor';
-import { Plus, FileText, Clock, CheckCircle, AlertCircle, ExternalLink, Search, Filter, SortAsc, SortDesc, RefreshCw, Activity, LayoutGrid, List } from 'lucide-react';
+import { Plus, FileText, Clock, CheckCircle, AlertCircle, ExternalLink, Search, Filter, SortAsc, SortDesc, RefreshCw, Activity, LayoutGrid, List, Trash2, Loader2 } from 'lucide-react';
 import { Project, ProjectStatus, ContentTone, ContentFormat } from '@/lib/types';
 import { User } from '@supabase/supabase-js';
 import { toast } from 'sonner';
@@ -175,6 +186,26 @@ export function DashboardContent({ user, initialProjects }: DashboardContentProp
     }
   };
 
+  const deleteProject = async (projectId: string) => {
+    try {
+      const response = await fetch(`/api/projects/${projectId}/delete`, {
+        method: 'DELETE',
+      });
+      const result = await response.json();
+
+      if (result.success) {
+        setProjects(prev => prev.filter(p => p.id !== projectId));
+        toast.success('Mission aborted successfully');
+      } else {
+        toast.error(result.error?.message || 'Failed to delete project');
+        throw new Error(result.error?.message);
+      }
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to delete project');
+      throw error;
+    }
+  };
+
   if (showCreateForm) {
     return (
       <motion.div
@@ -258,7 +289,7 @@ export function DashboardContent({ user, initialProjects }: DashboardContentProp
         <div className="flex flex-col lg:flex-row gap-4 items-center justify-between glass-card p-6 rounded-2xl border border-white/5 relative overflow-hidden">
           {/* Background Pattern */}
           <div className="absolute inset-0 bg-gradient-to-r from-primary/5 via-transparent to-purple-600/5 opacity-30" />
-          
+
           <div className="relative flex-1 w-full z-10">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground h-4 w-4" />
             <Input
@@ -319,6 +350,7 @@ export function DashboardContent({ user, initialProjects }: DashboardContentProp
                   project={project}
                   viewMode={viewMode}
                   idx={idx}
+                  onDelete={deleteProject}
                 />
               ))}
             </motion.div>
@@ -330,7 +362,7 @@ export function DashboardContent({ user, initialProjects }: DashboardContentProp
             >
               {/* Background Pattern */}
               <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-purple-600/5 opacity-50" />
-              
+
               <div className="relative z-10">
                 <div className="w-20 h-20 bg-gradient-to-br from-white/10 to-white/5 rounded-full flex items-center justify-center mx-auto mb-6 border border-white/10">
                   <Search className="w-10 h-10 text-muted-foreground" />
@@ -359,12 +391,12 @@ function StatCard({ label, value, icon, color = "text-muted-foreground", delay }
     >
       {/* Background Gradient */}
       <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-purple-600/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-      
+
       {/* Icon Background */}
       <div className="absolute top-4 right-4 p-3 rounded-xl bg-white/5 border border-white/10 opacity-20 group-hover:opacity-40 transition-opacity duration-300">
         {icon}
       </div>
-      
+
       <div className="relative z-10">
         <p className="text-xs font-bold tracking-widest uppercase text-muted-foreground/60 mb-3">{label}</p>
         <div className={cn("text-4xl font-bold transition-colors duration-300", color, "group-hover:text-primary")}>{value}</div>
@@ -373,15 +405,30 @@ function StatCard({ label, value, icon, color = "text-muted-foreground", delay }
   );
 }
 
-function ProjectCard({ project, viewMode, idx }: { project: Project, viewMode: 'grid' | 'list', idx: number }) {
+function ProjectCard({ project, viewMode, idx, onDelete }: { project: Project, viewMode: 'grid' | 'list', idx: number, onDelete: (projectId: string) => Promise<void> }) {
   const config = statusConfig[project.status as keyof typeof statusConfig] || statusConfig.draft;
   const StatusIcon = config.icon;
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isAlertOpen, setIsAlertOpen] = useState(false);
+
+  const handleDelete = async () => {
+    setIsDeleting(true);
+    try {
+      await onDelete(project.id);
+      setIsAlertOpen(false);
+    } catch (error) {
+      // Error handled in parent
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   return (
     <motion.div
       layout
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.9 }}
       transition={{ delay: idx * 0.05 }}
       className={cn(
         "glass-dark rounded-3xl border border-white/5 overflow-hidden group transition-all duration-500 relative hover-lift",
@@ -390,13 +437,50 @@ function ProjectCard({ project, viewMode, idx }: { project: Project, viewMode: '
     >
       {/* Enhanced Background Glow */}
       <div className={cn("absolute inset-0 -z-10 blur-3xl opacity-0 group-hover:opacity-20 transition-opacity duration-500", config.glow)} />
-      
+
       {/* Gradient Border Effect */}
       <div className="absolute -inset-0.5 bg-gradient-to-r from-primary/20 via-purple-600/20 to-pink-500/20 rounded-3xl blur opacity-0 group-hover:opacity-75 transition-opacity duration-500 -z-10" />
 
+      {/* Delete Button - Top Right */}
+      <AlertDialog open={isAlertOpen} onOpenChange={setIsAlertOpen}>
+        <AlertDialogTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="absolute top-4 right-4 z-20 h-9 w-9 rounded-xl bg-white/5 border border-white/10 text-muted-foreground hover:text-red-400 hover:bg-red-500/10 hover:border-red-500/30 transition-all duration-300"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent className="glass-dark border-white/10">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-xl">Abort Mission?</AlertDialogTitle>
+            <AlertDialogDescription className="text-muted-foreground">
+              This will permanently delete <span className="font-semibold text-white">&quot;{project.topic}&quot;</span> and cancel all running background processes.
+              <br /><br />
+              <span className="text-red-400">⚠️ This action cannot be undone.</span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="glass-card border-white/10 hover:bg-white/8">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className="bg-red-500/80 hover:bg-red-500 text-white border-red-500/50"
+            >
+              {isDeleting ? (
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Deleting...</>
+              ) : (
+                <><Trash2 className="mr-2 h-4 w-4" /> Delete Mission</>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <div className={cn("flex-1 relative z-10", viewMode === 'list' && "flex items-center gap-6")}>
         <div className="flex items-start justify-between mb-6">
-          <div className="flex-1">
+          <div className="flex-1 pr-10">
             <div className="flex items-center gap-3 mb-3">
               <div className={cn("p-3 rounded-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/10 transition-all duration-300", config.color, "group-hover:scale-110")}>
                 <StatusIcon className="w-5 h-5" />

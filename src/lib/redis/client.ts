@@ -7,7 +7,7 @@ export const redis = new Redis({
   // Production optimizations
   retry: {
     retries: 3,
-    retryDelayOnFailure: 1000,
+    backoff: () => 1000,
   },
   automaticDeserialization: true,
 });
@@ -139,7 +139,7 @@ export class CacheManager {
     if (keys.length === 0) return [];
     
     try {
-      return await redis.mget<T>(...keys);
+      return await (redis.mget as (...args: string[]) => Promise<(T | null)[]>)(...keys);
     } catch (error) {
       console.error('Batch get error:', error);
       return keys.map(() => null);

@@ -172,14 +172,8 @@ export const toast = {
           <span>{loading}</span>
         </div>
       ),
-      success: (data) => ({
-        title: 'Success',
-        description: typeof success === 'function' ? success(data) : success,
-      }),
-      error: (err) => ({
-        title: 'Error',
-        description: typeof error === 'function' ? error(err) : error,
-      }),
+      success: (data) => typeof success === 'function' ? success(data) : success,
+      error: (err) => typeof error === 'function' ? error(err) : error,
     });
   },
 };

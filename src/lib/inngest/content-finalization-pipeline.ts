@@ -128,7 +128,7 @@ export const finalizeContent = inngest.createFunction(
       const { error } = await supabase
         .from('projects')
         .update({
-          status: 'finalizing',
+          status: 'finalizing' as any,
           updated_at: new Date().toISOString()
         })
         .eq('id', projectId)
@@ -376,13 +376,13 @@ export const finalizeContent = inngest.createFunction(
           structuredData,
           takeaways
         },
-        status: 'completed',
+        status: 'completed' as const,
         updated_at: new Date().toISOString()
       };
 
       const { error } = await supabase
         .from('projects')
-        .update(finalizedData)
+        .update(finalizedData as any)
         .eq('id', projectId)
         .eq('user_id', userId);
 
@@ -512,7 +512,7 @@ export const manualTriggerFinalization = inngest.createFunction(
         throw new Error(`Project not found: ${error?.message}`);
       }
 
-      return project as Project;
+      return project as unknown as Project;
     });
 
     // Validate that project has content to finalize

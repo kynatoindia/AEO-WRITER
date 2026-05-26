@@ -4,7 +4,7 @@ import { checkDatabaseHealth } from '@/lib/supabase/pool';
 export interface HealthStatus {
   status: 'healthy' | 'degraded' | 'unhealthy';
   services: {
-    database: boolean;
+    database: boolean | { healthy: boolean; stats: any; responseTime?: number; error?: string };
     redis: boolean;
     ai: boolean;
   };
@@ -52,7 +52,7 @@ export async function getSystemHealth(): Promise<HealthStatus> {
     ai: aiHealth,
   };
 
-  const healthyServices = Object.values(services).filter(Boolean).length;
+  const healthyServices = Object.values(services).filter(s => (typeof s === 'object' ? (s as any).healthy : s)).length;
   const totalServices = Object.keys(services).length;
 
   let status: HealthStatus['status'];

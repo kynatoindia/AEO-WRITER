@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createRouteClient } from '@/lib/supabase/server';
 import { inngest } from '@/lib/inngest/client';
 import { checkQuota } from '@/lib/rate-limiting/quota';
-import { APIResponse, ProjectStatus } from '@/lib/types';
+import { APIResponse } from '@/lib/types';
 import { z } from 'zod';
-import { ErrorResponses, createErrorResponse, createValidationErrorResponse, createSuccessResponse } from '@/lib/utils/api-error-handler';
+import { ErrorResponses, createErrorResponse, createValidationErrorResponse } from '@/lib/utils/api-error-handler';
 
 // Request validation schema
 const GenerateContentSchema = z.object({
@@ -16,6 +16,26 @@ const GenerateContentSchema = z.object({
     targetReadingLevel: z.number().min(1).max(10).default(7)
   }).optional()
 });
+
+type ProjectForGeneration = {
+  status: string;
+  research_data: unknown;
+  topic: string;
+  tone: string;
+  format: string;
+};
+
+type SectionProgressRow = {
+  id: string;
+  heading: string;
+  status: 'pending' | 'writing' | 'completed';
+  generated_content: string | null;
+};
+
+type BlueprintSectionLike = {
+  id: string;
+  heading: string;
+};
 
 export async function POST(
   request: NextRequest,
@@ -84,7 +104,7 @@ export async function POST(
     }
     
     // Cast to Project type for TypeScript
-    const typedProject = project as any;
+    const typedProject = project as ProjectForGeneration;
     
     // Check if project has research data
     if (!typedProject.research_data) {
@@ -230,8 +250,8 @@ export async function GET(
     }
     
     // Fetch content sections (handle missing table gracefully)
-    let sections = [];
-    let sectionsError = null;
+    let sections: SectionProgressRow[] = [];
+    let sectionsErrorMessage = '';
     
     try {
       const { data: sectionsData, error: sectionsErr } = await supabase
@@ -240,24 +260,22 @@ export async function GET(
         .eq('project_id', projectId)
         .order('section_order');
       
-      sections = sectionsData || [];
-      sectionsError = sectionsErr;
+      sections = (sectionsData as SectionProgressRow[]) || [];
+      sectionsErrorMessage = sectionsErr?.message || '';
     } catch (error) {
       console.error('Failed to fetch sections:', error);
-      sectionsError = error;
+      sectionsErrorMessage = error instanceof Error ? error.message : '';
       // Continue with empty sections array for development
     }
     
-    if (sectionsError && !sectionsError.message?.includes('content_sections')) {
-      console.error('Failed to fetch sections:', sectionsError);
+    if (sectionsErrorMessage && !sectionsErrorMessage.includes('content_sections')) {
+      console.error('Failed to fetch sections:', sectionsErrorMessage);
     }
     
     const totalSections = sections?.length || 0;
-    const completedSections = sections?.filter(s => s.status === 'completed').length || 0;
-    const writingSections = sections?.filter(s => s.status === 'writing').length || 0;
     
     // For development: Create mock sections if none exist and project is in writing status
-    let mockSections = [];
+    let mockSections: SectionProgressRow[] = [];
     if (totalSections === 0 && project.status === 'writing') {
       mockSections = [
         { id: 'mock-1', heading: 'Introduction', status: 'pending', generated_content: '' },
@@ -276,13 +294,29 @@ export async function GET(
     const effectiveTotalSections = effectiveSections.length;
     const effectiveCompletedSections = effectiveSections.filter(s => s.status === 'completed').length;
     const effectiveWritingSections = effectiveSections.filter(s => s.status === 'writing').length;
+
+    const blueprintSections = (() => {
+      const raw = project.blueprint as { sections?: unknown } | null;
+      if (!raw || !Array.isArray(raw.sections)) return [];
+      return raw.sections
+        .filter((section): section is BlueprintSectionLike => {
+          if (!section || typeof section !== 'object') return false;
+          const candidate = section as Record<string, unknown>;
+          return typeof candidate.id === 'string' && typeof candidate.heading === 'string';
+        });
+    })();
+    const sectionIdByHeading = new Map(blueprintSections.map(section => [section.heading, section.id]));
     
     // Calculate progress percentage
     let progress = 0;
     if (effectiveTotalSections > 0) {
       progress = Math.round((effectiveCompletedSections / effectiveTotalSections) * 100);
+    } else if (project.status === 'completed') {
+      progress = 100;
+    } else if (project.status === 'writing') {
+      progress = 70;
     } else if (project.status === 'planning') {
-      progress = 10; // Strategy generation in progress
+      progress = 20; // Strategy generation in progress
     }
     
     // Estimate time remaining based on sections left
@@ -295,6 +329,7 @@ export async function GET(
       data: {
         projectId,
         status: project.status,
+        statusMessage: project.status_message ?? null,
         progress,
         totalSections: effectiveTotalSections,
         completedSections: effectiveCompletedSections,
@@ -303,11 +338,14 @@ export async function GET(
         estimatedTimeRemaining,
         currentSection: effectiveSections?.find(s => s.status === 'writing')?.heading,
         blueprint: project.blueprint,
+        finalContent: project.generated_content ?? null,
+        seoMetadata: project.seo_metadata ?? null,
         sections: effectiveSections?.map(section => ({
-          id: section.id,
+          id: sectionIdByHeading.get(section.heading) ?? section.id,
           heading: section.heading,
           status: section.status,
-          wordCount: section.generated_content?.split(' ').length || 0
+          wordCount: section.generated_content?.split(' ').length || 0,
+          content: section.generated_content || ''
         }))
       },
       timestamp: new Date().toISOString()

@@ -1,5 +1,4 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import { redis, CACHE_KEYS } from '@/lib/redis/client';
+import { redis } from '@/lib/redis/client';
 
 // Multi-provider AI gateway with automatic failover and Redis-based health tracking
 interface AIProvider {
@@ -14,10 +13,6 @@ interface AIProvider {
 }
 
 interface ProviderConfig {
-  gemini: {
-    apiKey: string;
-    model: string;
-  };
   groq: {
     apiKey: string;
     model: string;
@@ -102,28 +97,6 @@ class MultiProviderAIGateway {
   }
 
   private initializeProviders() {
-    // Gemini Provider (Primary for research/analysis)
-    if (this.config.gemini.apiKey) {
-      const gemini = new GoogleGenerativeAI(this.config.gemini.apiKey);
-      this.providers.push({
-        name: 'gemini',
-        priority: 1,
-        rateLimit: {
-          requestsPerMinute: 15, // Free tier limit
-          burstLimit: 5, // Max requests in 5 seconds
-        },
-        generate: async (prompt: string) => {
-          const model = gemini.getGenerativeModel({ model: this.config.gemini.model });
-          const result = await model.generateContent(prompt);
-          return result.response.text();
-        },
-        isAvailable: async () => {
-          const redisHealthy = await this.isProviderHealthy('gemini');
-          return redisHealthy && !this.isRateLimited('gemini');
-        }
-      });
-    }
-
     // Groq Provider (Fast inference for content generation)
     if (this.config.groq.apiKey) {
       this.providers.push({
@@ -162,11 +135,11 @@ class MultiProviderAIGateway {
       });
     }
 
-    // OpenRouter Provider (Fallback with multiple models)
+    // OpenRouter Provider (Primary)
     if (this.config.openrouter.apiKey) {
       this.providers.push({
         name: 'openrouter',
-        priority: 3,
+        priority: 1,
         rateLimit: {
           requestsPerMinute: 20, // OpenRouter free tier
           burstLimit: 8,
@@ -245,17 +218,17 @@ class MultiProviderAIGateway {
     let orderedProviders = [...this.providers];
 
     if (taskType === 'research') {
-      // Prefer Gemini for research (large context window)
+      // Prefer OpenRouter for research
       orderedProviders = orderedProviders.sort((a, b) => {
-        if (a.name === 'gemini') return -1;
-        if (b.name === 'gemini') return 1;
+        if (a.name === 'openrouter') return -1;
+        if (b.name === 'openrouter') return 1;
         return a.priority - b.priority;
       });
     } else if (taskType === 'content') {
-      // Prefer Groq for content generation (fast inference)
+      // Prefer OpenRouter for content generation
       orderedProviders = orderedProviders.sort((a, b) => {
-        if (a.name === 'groq') return -1;
-        if (b.name === 'groq') return 1;
+        if (a.name === 'openrouter') return -1;
+        if (b.name === 'openrouter') return 1;
         return a.priority - b.priority;
       });
     }
@@ -288,11 +261,6 @@ class MultiProviderAIGateway {
         this.trackRequest(provider.name);
 
         console.log(`Attempting generation with ${provider.name} (attempt ${attempts})`);
-
-        // Add artificial delay for Gemini to prevent burst limits
-        if (provider.name === 'gemini' && attempts > 1) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        }
 
         const content = await provider.generate(prompt);
 
@@ -337,7 +305,7 @@ class MultiProviderAIGateway {
   async generateResearch(prompt: string): Promise<string> {
     const result = await this.generateWithFailover(prompt, {
       taskType: 'research',
-      preferredProvider: 'gemini', // Best for research with large context
+      preferredProvider: 'openrouter',
     });
     return result.content;
   }
@@ -345,7 +313,7 @@ class MultiProviderAIGateway {
   async generateContent(prompt: string): Promise<string> {
     const result = await this.generateWithFailover(prompt, {
       taskType: 'content',
-      preferredProvider: 'groq', // Fastest for content generation
+      preferredProvider: 'openrouter',
     });
     return result.content;
   }
@@ -353,7 +321,7 @@ class MultiProviderAIGateway {
   async generateAnalysis(prompt: string): Promise<string> {
     const result = await this.generateWithFailover(prompt, {
       taskType: 'analysis',
-      preferredProvider: 'gemini', // Best reasoning capabilities
+      preferredProvider: 'openrouter',
     });
     return result.content;
   }
@@ -372,17 +340,13 @@ class MultiProviderAIGateway {
 
 // Initialize the gateway with environment variables
 const providerConfig: ProviderConfig = {
-  gemini: {
-    apiKey: process.env.GOOGLE_AI_API_KEY || '',
-    model: 'gemini-1.5-flash',
-  },
   groq: {
     apiKey: process.env.GROQ_API_KEY || '',
-    model: 'llama-3.3-70b-versatile',
+    model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
   },
   openrouter: {
     apiKey: process.env.OPENROUTER_API_KEY || '',
-    model: 'mistralai/mistral-7b-instruct:free',
+    model: process.env.OPENROUTER_MODEL || 'openrouter/auto',
   },
 };
 

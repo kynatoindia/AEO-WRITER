@@ -10,7 +10,7 @@ export const handleProjectInitialization = inngest.createFunction(
     id: 'handle-project-initialization',
     concurrency: [
       {
-        limit: CONCURRENCY_LIMITS['project/created'] || 5,
+        limit: (CONCURRENCY_LIMITS as any)['project/created'] || 5,
         key: 'event.data.userId',
       },
       {
@@ -30,7 +30,7 @@ export const handleProjectInitialization = inngest.createFunction(
     // Check for duplicate initialization
     const duplicateCheck = await step.run('check-duplicate-initialization', async () => {
       const existingResult = await redis.get(`idempotency:${idempotencyKey}`);
-      return existingResult ? JSON.parse(existingResult) : null;
+      return existingResult ? JSON.parse(existingResult as string) : null;
     });
     
     if (duplicateCheck) {
@@ -199,8 +199,8 @@ export const handleProjectInitialization = inngest.createFunction(
           brandDocumentProcessed: brandProcessingResult.processed,
           aiCompetitorDiscovery: true,
           strategicIntelligenceLoop: competitorDiscoveryResult.strategicIntelligenceLoop,
-          securityValidated: brandProcessingResult.securityValidated ?? false,
-          virusScanPassed: brandProcessingResult.virusScanPassed ?? true,
+          securityValidated: (brandProcessingResult as any).securityValidated ?? false,
+          virusScanPassed: (brandProcessingResult as any).virusScanPassed ?? true,
         },
         progress: {
           initialization: 100,
@@ -259,7 +259,7 @@ export const handleProjectInitialization = inngest.createFunction(
       brandDocumentProcessed: brandProcessingResult.processed,
       aiCompetitorDiscovery: true,
       strategicIntelligenceLoop: competitorDiscoveryResult.strategicIntelligenceLoop,
-      securityValidated: brandProcessingResult.securityValidated ?? false,
+      securityValidated: (brandProcessingResult as any).securityValidated ?? false,
       initializationCompleted: true,
       idempotencyKey,
       timestamp: new Date().toISOString(),
@@ -323,6 +323,7 @@ export const handleImmediateProjectInitialization = inngest.createFunction(
           topic: event.data.topic,
           tone: event.data.tone,
           format: event.data.format,
+          competitorUrls: Array.isArray(event.data.competitorUrls) ? event.data.competitorUrls : [],
           industry: event.data.industry || 'general',
           targetAudience: event.data.targetAudience || 'general',
           brandDocumentPath,

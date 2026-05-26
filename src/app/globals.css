@@ -9,7 +9,12 @@
   body {
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
+    font-family: var(--font-geist-sans), system-ui, sans-serif;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  code, pre, kbd, samp {
+    font-family: var(--font-geist-mono), monospace;
   }
 
   body::selection {

@@ -26,16 +26,16 @@ function LoginForm() {
   }, [supabase, router, redirectTo]);
 
   return (
-    <div className="bg-white py-8 px-6 shadow rounded-lg">
+    <div className="glass-card py-8 px-6 rounded-2xl border border-white/10 shadow-2xl">
       <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-900 text-center">
+        <h2 className="text-2xl font-bold text-foreground text-center">
           Sign in to your account
         </h2>
-        <p className="mt-2 text-center text-sm text-gray-600">
+        <p className="mt-2 text-center text-sm text-muted-foreground">
           Or{' '}
           <Link
             href="/auth/register"
-            className="font-medium text-blue-600 hover:text-blue-500"
+            className="font-medium text-primary hover:text-primary/80 transition-colors"
           >
             create a new account
           </Link>
@@ -50,8 +50,21 @@ function LoginForm() {
           variables: {
             default: {
               colors: {
-                brand: '#2563eb',
-                brandAccent: '#1d4ed8',
+                brand: 'hsl(260 85% 65%)',
+                brandAccent: 'hsl(260 85% 55%)',
+                inputBackground: 'hsl(220 25% 10%)',
+                inputBorder: 'hsl(220 20% 20%)',
+                inputBorderFocus: 'hsl(260 85% 65%)',
+                inputText: 'hsl(220 15% 95%)',
+                inputPlaceholder: 'hsl(220 10% 50%)',
+                defaultButtonBackground: 'hsl(220 25% 12%)',
+                defaultButtonBackgroundHover: 'hsl(220 25% 15%)',
+                defaultButtonBorder: 'hsl(220 20% 20%)',
+                defaultButtonText: 'hsl(220 15% 90%)',
+                dividerBackground: 'hsl(220 20% 15%)',
+                messageText: 'hsl(220 15% 90%)',
+                messageBackground: 'hsl(220 25% 10%)',
+                messageBorder: 'hsl(220 20% 20%)',
               },
             },
           },
@@ -71,7 +84,7 @@ function LoginForm() {
       <div className="mt-6 text-center">
         <Link
           href="/auth/forgot-password"
-          className="text-sm text-blue-600 hover:text-blue-500"
+          className="text-sm text-primary hover:text-primary/80 transition-colors"
         >
           Forgot your password?
         </Link>
@@ -82,7 +95,11 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="bg-white py-8 px-6 shadow rounded-lg">Loading...</div>}>
+    <Suspense fallback={
+      <div className="glass-card py-8 px-6 rounded-2xl border border-white/10">
+        <div className="text-center text-muted-foreground">Loading...</div>
+      </div>
+    }>
       <LoginForm />
     </Suspense>
   );

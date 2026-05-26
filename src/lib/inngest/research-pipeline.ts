@@ -89,7 +89,7 @@ export const researchPipelineWorkflow = inngest.createFunction(
     // Check for duplicate research requests
     const duplicateCheck = await step.run('check-duplicate-research', async () => {
       const existingResult = await redis.get(`idempotency:${idempotencyKey}`);
-      return existingResult ? JSON.parse(existingResult) : null;
+      return existingResult ? JSON.parse(existingResult as string) : null;
     });
     
     if (duplicateCheck) {
@@ -171,9 +171,6 @@ export const researchPipelineWorkflow = inngest.createFunction(
           
           return fallbackResults;
         }
-      },
-      {
-        retries: RETRY_CONFIG['external-api'].attempts,
       }
     );
 
@@ -324,9 +321,6 @@ export const researchPipelineWorkflow = inngest.createFunction(
           
           throw error; // Let Inngest retry
         }
-      },
-      {
-        retries: RETRY_CONFIG['external-api'].attempts,
       }
     );
 
@@ -339,7 +333,7 @@ export const researchPipelineWorkflow = inngest.createFunction(
         brandAnalysis: brandAnalysis || undefined,
         researchSummary: researchAnalysis.analysis,
         processingMetrics: {
-          totalProcessingTime: Date.now() - parseInt(event.ts),
+          totalProcessingTime: Date.now() - parseInt(String(event.ts ?? 0)),
           competitorsScrapped: competitorData.length,
           brandDocumentProcessed: !!brandAnalysis,
           aiAnalysisTime: 0, // Would be tracked in production

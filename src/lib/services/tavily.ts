@@ -379,7 +379,7 @@ class TavilyService {
 
   private extractStructuredData(content: string): Record<string, any> | undefined {
     try {
-      const jsonLdMatch = content.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>(.*?)<\/script>/is);
+      const jsonLdMatch = content.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/i);
       if (jsonLdMatch) {
         return JSON.parse(jsonLdMatch[1]);
       }
@@ -400,8 +400,8 @@ class TavilyService {
     // Find topics that competitors cover but our content doesn't
     const gaps: string[] = [];
     competitorTopics.forEach(topic => {
-      if (!contentTopics.has(topic)) {
-        gaps.push(topic);
+      if (!contentTopics.has(topic as string)) {
+        gaps.push(topic as string);
       }
     });
 
@@ -565,5 +565,3 @@ class TavilyService {
 // Export singleton instance
 export const tavilyService = new TavilyService();
 
-// Export types
-export type { TavilySearchOptions, TavilyCompetitorAnalysis };

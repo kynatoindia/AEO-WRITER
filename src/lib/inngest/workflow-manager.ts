@@ -40,8 +40,8 @@ export class WorkflowRecovery {
       data: {
         workflowId,
         lastSuccessfulStep,
-        originalData: JSON.parse(workflowStatus.originalData || '{}'),
-        retryCount: parseInt(workflowStatus.retryCount || '0') + 1,
+        originalData: JSON.parse((workflowStatus.originalData as string) || '{}'),
+        retryCount: parseInt((workflowStatus.retryCount as string) || '0') + 1,
       },
     });
   }
@@ -50,11 +50,13 @@ export class WorkflowRecovery {
    * Mark workflow step as completed for recovery tracking
    */
   static async markStepCompleted(workflowId: string, stepName: string, result: any): Promise<void> {
-    await redis.hset(`workflow:${workflowId}:steps`, stepName, JSON.stringify({
-      completedAt: Date.now(),
-      result,
-      status: 'completed',
-    }));
+    await redis.hset(`workflow:${workflowId}:steps`, {
+      [stepName]: JSON.stringify({
+        completedAt: Date.now(),
+        result,
+        status: 'completed',
+      })
+    });
   }
   
   /**
@@ -63,11 +65,11 @@ export class WorkflowRecovery {
   static async getCompletedSteps(workflowId: string): Promise<Record<string, any>> {
     const steps = await redis.hgetall(`workflow:${workflowId}:steps`);
     const completedSteps: Record<string, any> = {};
-    
-    for (const [stepName, stepData] of Object.entries(steps)) {
-      completedSteps[stepName] = JSON.parse(stepData);
+
+    for (const [stepName, stepData] of Object.entries(steps ?? {})) {
+      completedSteps[stepName] = JSON.parse(stepData as string);
     }
-    
+
     return completedSteps;
   }
 }
@@ -173,12 +175,12 @@ export class WorkflowMonitor {
     const timestamp = Date.now();
     
     // Store execution metrics
-    await redis.zadd(`${metricsKey}:executions`, timestamp, JSON.stringify({
+    await redis.zadd(`${metricsKey}:executions`, { score: timestamp, member: JSON.stringify({
       workflowId,
       duration,
       success,
       timestamp,
-    }));
+    }) });
     
     // Update counters
     await redis.hincrby(`${metricsKey}:counters`, 'total', 1);
@@ -190,9 +192,9 @@ export class WorkflowMonitor {
     
     // Update average duration
     const avgDurationKey = `${metricsKey}:avg_duration`;
-    const currentAvg = parseFloat(await redis.get(avgDurationKey) || '0');
+    const currentAvg = parseFloat((await redis.get(avgDurationKey) as string) || '0');
     const totalExecutions = await redis.hget(`${metricsKey}:counters`, 'total');
-    const newAvg = ((currentAvg * (parseInt(totalExecutions || '1') - 1)) + duration) / parseInt(totalExecutions || '1');
+    const newAvg = ((currentAvg * (parseInt((totalExecutions as string) || '1') - 1)) + duration) / parseInt((totalExecutions as string) || '1');
     await redis.set(avgDurationKey, newAvg.toString());
   }
   
@@ -207,19 +209,19 @@ export class WorkflowMonitor {
   }> {
     const metricsKey = `metrics:workflow:${eventType}`;
     const counters = await redis.hgetall(`${metricsKey}:counters`);
-    const avgDuration = parseFloat(await redis.get(`${metricsKey}:avg_duration`) || '0');
-    
+    const avgDuration = parseFloat((await redis.get(`${metricsKey}:avg_duration`) as string) || '0');
+
     const since = Date.now() - (timeRange * 1000);
-    const recentExecutions = await redis.zrangebyscore(`${metricsKey}:executions`, since, '+inf');
-    
-    const total = parseInt(counters.total || '0');
-    const success = parseInt(counters.success || '0');
-    
+    const recentExecutions = await redis.zrange(`${metricsKey}:executions`, since, '+inf', { byScore: true });
+
+    const total = parseInt((counters as any)?.total || '0');
+    const success = parseInt((counters as any)?.success || '0');
+
     return {
       totalExecutions: total,
       successRate: total > 0 ? (success / total) * 100 : 0,
       averageDuration: avgDuration,
-      recentExecutions: recentExecutions.map(exec => JSON.parse(exec)),
+      recentExecutions: (recentExecutions as string[]).map((exec: string) => JSON.parse(exec)),
     };
   }
 }
@@ -231,7 +233,7 @@ export class IdempotencyManager {
    */
   static async checkIdempotency(key: string): Promise<any | null> {
     const result = await redis.get(`idempotency:${key}`);
-    return result ? JSON.parse(result) : null;
+    return result ? JSON.parse(result as string) : null;
   }
   
   /**

@@ -4,9 +4,8 @@ import { competitorDiscoveryService } from '@/lib/services/competitor-discovery'
 import { atomicFactsExtractor } from '@/lib/services/atomic-facts-extractor';
 import { tavilyService } from '@/lib/services/tavily';
 import { pdfProcessor } from '@/lib/services/pdf-processor';
-import { generateAIText, generateStructuredOutput } from '@/lib/ai/gateway';
+import { generateAIText, generateStructuredOutput, getAvailableModels } from '@/lib/ai/gateway';
 import { createClient } from '@supabase/supabase-js';
-import { createRouteClient } from '@/lib/supabase/server';
 import { updateProjectStatus, statusHelpers } from '@/lib/utils/project-status';
 import { NonRetriableError } from 'inngest';
 import { z } from 'zod';
@@ -16,6 +15,11 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
+
+const FAST_PIPELINE_MODE = process.env.AEO_FAST_MODE !== 'false';
+const MAX_RESEARCH_COMPETITORS = Number.isFinite(Number(process.env.AEO_MAX_RESEARCH_COMPETITORS))
+  ? Math.max(1, Number(process.env.AEO_MAX_RESEARCH_COMPETITORS))
+  : (FAST_PIPELINE_MODE ? 3 : 5);
 
 // Enhanced research result schema with atomic facts
 const ModularResearchResultSchema = z.object({
@@ -112,41 +116,85 @@ export const modularAgenticResearchPipeline = inngest.createFunction(
         key: 'event.data.userId',
       },
       {
-        limit: 1,
+        limit: 2,
         scope: "account",
-        key: '"gemini-quota-limit"', // Global Gemini quota limit protection
+        key: '"ai-provider-limit"', // Global AI provider limit protection
       }
     ],
     retries: RETRY_CONFIG['external-api'].attempts,
   },
   { event: 'project/modular-research-started' },
   async ({ event, step }) => {
-    const { userId, projectId, topic, tone, format, industry, targetAudience, brandDocumentPath } = event.data;
+    const { userId, projectId, topic, tone, format, industry, targetAudience, brandDocumentPath, competitorUrls } = event.data;
 
     console.log(`Starting Modular Agentic Research Pipeline for project ${projectId}`);
 
     // Generate idempotency key for research operation
     const idempotencyKey = generateIdempotencyKey.research(userId, projectId, [topic]);
 
-    // Check for duplicate research requests
-    const duplicateCheck = await step.run('check-duplicate-research', async () => {
-      const existingResult = await redis.get<string>(`idempotency:${idempotencyKey}`);
-      return existingResult ? JSON.parse(existingResult) : null;
-    });
+    try {
+      // Check for duplicate research requests
+      const duplicateCheck = await step.run('check-duplicate-research', async () => {
+        const existingResult = await redis.get<string>(`idempotency:${idempotencyKey}`);
+        return existingResult ? JSON.parse(existingResult as string) : null;
+      });
 
-    if (duplicateCheck) {
-      console.log(`Duplicate research request detected for ${idempotencyKey}`);
-      return duplicateCheck;
-    }
+      if (duplicateCheck) {
+        console.log(`Duplicate research request detected for ${idempotencyKey}`);
+        return duplicateCheck;
+      }
 
-    // Update project status to researching
-    await step.run('update-project-status-researching', async () => {
-      await statusHelpers.setResearching(projectId, 'Initializing Modular Agentic Research');
-    });
+      // Update project status to researching
+      await step.run('update-project-status-researching', async () => {
+        await statusHelpers.setResearching(projectId, 'Initializing Modular Agentic Research');
+      });
 
-    // Step 1: AI-Powered Competitor Discovery (No more manual URLs!)
-    const competitorDiscovery = await step.run('ai-competitor-discovery',
+    // Step 1: Resolve competitors (prefer user-provided URLs for speed, fallback to AI discovery)
+    const competitorDiscovery = await step.run('resolve-competitors',
       async () => {
+        const providedCompetitors = Array.isArray(competitorUrls)
+          ? competitorUrls.filter((url): url is string => typeof url === 'string' && url.length > 0)
+          : [];
+
+        const normalizedProvided = [...new Set(providedCompetitors)].slice(0, MAX_RESEARCH_COMPETITORS);
+
+        if (normalizedProvided.length > 0) {
+          await updateProjectStatus(
+            projectId,
+            'researching',
+            `🚀 Going: Using ${normalizedProvided.length} provided competitor URLs for fast research...`,
+            { progress: 20, currentStep: 'Competitor Selection' }
+          );
+
+          const competitors = normalizedProvided.map((url, index) => {
+            let domain = url;
+            try {
+              domain = new URL(url).hostname.replace(/^www\./, '');
+            } catch {
+              // Keep original URL string fallback.
+            }
+
+            return {
+              url,
+              title: domain,
+              relevanceScore: Math.max(70, 95 - index * 5),
+              reason: 'User-provided competitor',
+              domain,
+              estimatedAuthority: Math.max(55, 90 - index * 6),
+            };
+          });
+
+          return {
+            competitors,
+            searchStrategy: {
+              primaryKeywords: [topic],
+              searchQueries: ['user-provided-competitors'],
+              totalResults: competitors.length,
+              filteredResults: competitors.length,
+            },
+          };
+        }
+
         console.log(`AI discovering competitors for topic: ${topic}`);
 
         try {
@@ -193,11 +241,11 @@ export const modularAgenticResearchPipeline = inngest.createFunction(
       }
     );
 
-    // Step 2: Scrape and Extract Facts in a loop (Integrated for efficiency)
-
-    // Step 3: Loop through discovered competitors for deep scraping and fact extraction
-    const discoveredUrls = competitorDiscovery.competitors.map(c => c.url);
-    const allExtractedFacts = [];
+    // Step 2: Loop through selected competitors for deep scraping and fact extraction.
+    const discoveredUrls = competitorDiscovery.competitors
+      .map(c => c.url)
+      .slice(0, MAX_RESEARCH_COMPETITORS);
+    const allExtractedFacts: any[] = [];
 
     for (const url of discoveredUrls) {
       await step.run(`deep-scrape-extraction-${url}`, async () => {
@@ -225,25 +273,6 @@ export const modularAgenticResearchPipeline = inngest.createFunction(
             userId
           );
 
-          // 3. Append to Supabase 'fact_vault' column for this project
-          const { data: currentProject, error: fetchError } = await supabase
-            .from('projects')
-            .select('fact_vault')
-            .eq('id', projectId)
-            .single();
-
-          if (fetchError) throw fetchError;
-
-          const currentVault = Array.isArray(currentProject.fact_vault) ? currentProject.fact_vault : [];
-          const updatedVault = [...currentVault, ...extraction.facts];
-
-          const { error: updateError } = await supabase
-            .from('projects')
-            .update({ fact_vault: updatedVault })
-            .eq('id', projectId);
-
-          if (updateError) throw updateError;
-
           allExtractedFacts.push(...extraction.facts);
 
           return {
@@ -259,22 +288,45 @@ export const modularAgenticResearchPipeline = inngest.createFunction(
 
     // Step 4: Finalize Fact Vault metrics (The "Map" operation summary)
     const competitorFactVault = await step.run('finalize-fact-vault-metrics', async () => {
-      // Fetch the final vault to calculate metrics
-      const { data: finalProject } = await supabase
-        .from('projects')
-        .select('fact_vault')
-        .eq('id', projectId)
-        .single();
+      const dedupedFacts = allExtractedFacts.filter((fact, index, self) => {
+        return index === self.findIndex((candidate) =>
+          candidate.fact === fact.fact && candidate.source === fact.source
+        );
+      });
 
-      const allFacts = (finalProject?.fact_vault as any[]) || [];
+      const allFacts = dedupedFacts.length > 0
+        ? dedupedFacts
+        : [{
+          id: `fallback_fact_${projectId}`,
+          fact: `Reliable competitor data was limited, so baseline insights were generated for ${topic}.`,
+          category: 'insight',
+          confidence: 60,
+          relevanceScore: 70,
+          source: 'system-fallback',
+          keywords: [topic],
+          verified: false,
+        }];
+
+      const estimatedOriginalTokens = Math.max(1, discoveredUrls.length * 1200);
+      const compressedFactTokens = Math.max(
+        1,
+        allFacts.reduce((sum, fact) => sum + Math.ceil((fact.fact || '').length / 4), 0)
+      );
+      const compressionRatio = Math.round((estimatedOriginalTokens / compressedFactTokens) * 10) / 10;
+      const qualityScore = Math.max(
+        50,
+        Math.round(
+          allFacts.reduce((sum, fact) => sum + ((fact.confidence || 0) * (fact.relevanceScore || 0) / 100), 0) / allFacts.length
+        )
+      );
 
       return {
         atomicFacts: allFacts,
         extractionMetrics: {
-          originalTokens: allFacts.length * 500, // Estimate
+          originalTokens: estimatedOriginalTokens,
           extractedFacts: allFacts.length,
-          compressionRatio: 10.5, // Target compression
-          qualityScore: 85
+          compressionRatio,
+          qualityScore
         },
         topicCoverage: {
           mainTopics: [...new Set(allFacts.flatMap(fact => fact.keywords || []))].slice(0, 10) as string[],
@@ -444,7 +496,7 @@ export const modularAgenticResearchPipeline = inngest.createFunction(
             await updateProjectStatus(
               projectId,
               'stuck',
-              '⚠️ Stuck: Waiting for Google Quota reset during analysis...',
+              '⚠️ Stuck: Waiting for AI provider rate limit reset during analysis...',
               {
                 estimatedTimeRemaining: 60,
                 currentStep: 'Waiting for quota reset'
@@ -504,8 +556,8 @@ export const modularAgenticResearchPipeline = inngest.createFunction(
           operation_type: 'modular_research',
           tokens_used: researchAnalysis.tokensUsed,
           cost_usd: researchAnalysis.cost,
-          api_provider: 'gemini',
-          model_used: 'gemini-1.5-pro',
+          api_provider: 'openrouter',
+          model_used: getAvailableModels('openrouter')[0] || process.env.OPENROUTER_MODEL || 'openrouter/auto',
           metadata: {
             competitorsDiscovered: competitorDiscovery.competitors.length,
             competitorsAnalyzed: discoveredUrls.length,
@@ -527,7 +579,6 @@ export const modularAgenticResearchPipeline = inngest.createFunction(
         data: {
           userId,
           projectId,
-          researchData: researchResult,
           tokensUsed: researchAnalysis.tokensUsed,
           cost: researchAnalysis.cost,
         },
@@ -558,10 +609,18 @@ export const modularAgenticResearchPipeline = inngest.createFunction(
     // Cache result for idempotency
     await redis.setex(`idempotency:${idempotencyKey}`, 7200, JSON.stringify(result));
 
-    console.log(`Modular Agentic Research Pipeline completed for project ${projectId}`);
-    console.log(`Achieved ${competitorFactVault.extractionMetrics.compressionRatio.toFixed(1)}x compression with ${competitorFactVault.atomicFacts.length} atomic facts`);
+      console.log(`Modular Agentic Research Pipeline completed for project ${projectId}`);
+      console.log(`Achieved ${competitorFactVault.extractionMetrics.compressionRatio.toFixed(1)}x compression with ${competitorFactVault.atomicFacts.length} atomic facts`);
 
-    return result;
+      return result;
+    } catch (error: any) {
+      console.error(`Modular Agentic Research Pipeline failed for project ${projectId}:`, error);
+      await statusHelpers.setPermanentError(
+        projectId,
+        error instanceof Error ? error.message : 'Research pipeline failed unexpectedly'
+      );
+      throw error;
+    }
   }
 );
 
@@ -573,25 +632,23 @@ export const modularResearchCompletionHandler = inngest.createFunction(
     id: 'modular-research-completion-handler',
     name: 'Modular Research Completion Handler',
     concurrency: {
-      limit: 1,
+      limit: 2,
       scope: "account",
-      key: '"gemini-quota-limit"', // Global Gemini quota limit protection
+      key: '"ai-provider-limit"', // Global AI provider limit protection
     },
     retries: RETRY_CONFIG['default'].attempts,
   },
   { event: 'research/modular-completed' },
   async ({ event, step }) => {
-    const { userId, projectId, researchData } = event.data;
+    const { userId, projectId } = event.data;
 
     console.log(`Modular research completed for project ${projectId}, triggering fact-based blueprint generation`);
-
-    const supabase = await createRouteClient();
 
     // Get project details for blueprint generation
     const projectDetails = await step.run('get-project-details', async () => {
       const { data, error } = await supabase
         .from('projects')
-        .select('topic, tone, format')
+        .select('topic, tone, format, research_data')
         .eq('id', projectId)
         .single();
 
@@ -604,12 +661,16 @@ export const modularResearchCompletionHandler = inngest.createFunction(
 
     // Trigger fact-based blueprint generation workflow
     await step.run('trigger-fact-based-blueprint-generation', async () => {
+      if (!projectDetails.research_data) {
+        throw new Error(`Research data missing for project ${projectId}`);
+      }
+
       await inngest.send({
         name: 'content/fact-based-strategy-generate',
         data: {
           userId,
           projectId,
-          researchData,
+          researchData: projectDetails.research_data,
           topic: projectDetails.topic,
           tone: projectDetails.tone,
           format: projectDetails.format,

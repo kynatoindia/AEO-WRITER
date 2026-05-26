@@ -37,7 +37,7 @@ export const handleContentGeneration = inngest.createFunction(
     const duplicateCheck = await step.run('check-duplicate-request', async () => {
       const existingResult = await redis.get(`idempotency:${idempotencyKey}`);
       if (existingResult) {
-        return JSON.parse(existingResult);
+        return JSON.parse(existingResult as string);
       }
       return null;
     });
@@ -161,7 +161,7 @@ export const handleProjectResearch = inngest.createFunction(
     // Check for duplicate research requests
     const duplicateCheck = await step.run('check-duplicate-research', async () => {
       const existingResult = await redis.get(`idempotency:${idempotencyKey}`);
-      return existingResult ? JSON.parse(existingResult) : null;
+      return existingResult ? JSON.parse(existingResult as string) : null;
     });
     
     if (duplicateCheck) {
@@ -264,7 +264,7 @@ export const handleBlueprintGeneration = inngest.createFunction(
     // Check for duplicate blueprint requests
     const duplicateCheck = await step.run('check-duplicate-blueprint', async () => {
       const existingResult = await redis.get(`idempotency:${idempotencyKey}`);
-      return existingResult ? JSON.parse(existingResult) : null;
+      return existingResult ? JSON.parse(existingResult as string) : null;
     });
     
     if (duplicateCheck) {
@@ -360,7 +360,7 @@ export const handleUserRegistration = inngest.createFunction(
     // Check for duplicate registration
     const duplicateCheck = await step.run('check-duplicate-registration', async () => {
       const existingResult = await redis.get(`idempotency:${idempotencyKey}`);
-      return existingResult ? JSON.parse(existingResult) : null;
+      return existingResult ? JSON.parse(existingResult as string) : null;
     });
     
     if (duplicateCheck) {
@@ -458,7 +458,7 @@ export const handleSubscriptionUpdate = inngest.createFunction(
     // Check for duplicate upgrade requests
     const duplicateCheck = await step.run('check-duplicate-upgrade', async () => {
       const existingResult = await redis.get(`idempotency:${idempotencyKey}`);
-      return existingResult ? JSON.parse(existingResult) : null;
+      return existingResult ? JSON.parse(existingResult as string) : null;
     });
     
     if (duplicateCheck) {
@@ -558,7 +558,7 @@ export const writeAEOBlog = inngest.createFunction(
           { id: 'finalize', label: 'Final SEO optimization', state: 'pending' },
         ];
         
-        await supabase.rpc('update_project_progress', {
+        await (supabase.rpc as any)('update_project_progress', {
           p_project_id: projectId,
           p_status: 'processing',
           p_current_section: 'Generating blog layout',
@@ -596,7 +596,7 @@ export const writeAEOBlog = inngest.createFunction(
         const { createRouteClient } = await import('@/lib/supabase/server');
         const supabase = await createRouteClient();
         
-        await supabase.rpc('update_project_step', {
+        await (supabase.rpc as any)('update_project_step', {
           p_project_id: projectId,
           p_step_id: 'layout',
           p_step_label: 'Generating blog layout',
@@ -604,7 +604,7 @@ export const writeAEOBlog = inngest.createFunction(
           p_step_details: `Generated ${sections.length} sections using ${result.provider}`
         });
         
-        await supabase.rpc('update_project_progress', {
+        await (supabase.rpc as any)('update_project_progress', {
           p_project_id: projectId,
           p_current_section: 'Writing introduction',
           p_progress_percentage: 15,
@@ -625,7 +625,7 @@ export const writeAEOBlog = inngest.createFunction(
           const { createRouteClient } = await import('@/lib/supabase/server');
           const supabase = await createRouteClient();
           
-          await supabase.rpc('update_project_step', {
+          await (supabase.rpc as any)('update_project_step', {
             p_project_id: projectId,
             p_step_id: 'layout',
             p_step_label: 'Generating blog layout',
@@ -641,7 +641,7 @@ export const writeAEOBlog = inngest.createFunction(
     });
 
     // STEP 2: Iterative Writing (Looping through sections with failover)
-    const completedSections = [];
+    const completedSections: any[] = [];
     for (let i = 0; i < layout.sections.length; i++) {
       const sectionTitle = layout.sections[i];
       const stepId = `section-${i + 1}`;
@@ -652,14 +652,14 @@ export const writeAEOBlog = inngest.createFunction(
           const { createRouteClient } = await import('@/lib/supabase/server');
           const supabase = await createRouteClient();
           
-          await supabase.rpc('update_project_step', {
+          await (supabase.rpc as any)('update_project_step', {
             p_project_id: projectId,
             p_step_id: stepId,
             p_step_label: `Writing ${sectionTitle.toLowerCase()}`,
             p_step_state: 'processing',
           });
           
-          await supabase.rpc('update_project_progress', {
+          await (supabase.rpc as any)('update_project_progress', {
             p_project_id: projectId,
             p_current_section: `Writing ${sectionTitle}`,
             p_progress_percentage: 15 + ((i + 1) / layout.sections.length) * 70,
@@ -702,7 +702,7 @@ export const writeAEOBlog = inngest.createFunction(
           const { createRouteClient } = await import('@/lib/supabase/server');
           const supabase = await createRouteClient();
           
-          await supabase.rpc('update_project_step', {
+          await (supabase.rpc as any)('update_project_step', {
             p_project_id: projectId,
             p_step_id: stepId,
             p_step_label: `Writing ${sectionTitle.toLowerCase()}`,
@@ -724,14 +724,14 @@ export const writeAEOBlog = inngest.createFunction(
         const { createRouteClient } = await import('@/lib/supabase/server');
         const supabase = await createRouteClient();
         
-        await supabase.rpc('update_project_step', {
+        await (supabase.rpc as any)('update_project_step', {
           p_project_id: projectId,
           p_step_id: 'finalize',
           p_step_label: 'Final SEO optimization',
           p_step_state: 'processing',
         });
         
-        await supabase.rpc('update_project_progress', {
+        await (supabase.rpc as any)('update_project_progress', {
           p_project_id: projectId,
           p_current_section: 'Final SEO optimization',
           p_progress_percentage: 90,
@@ -774,7 +774,7 @@ export const writeAEOBlog = inngest.createFunction(
         const supabase = await createRouteClient();
         
         // Update finalize step as completed
-        await supabase.rpc('update_project_step', {
+        await (supabase.rpc as any)('update_project_step', {
           p_project_id: projectId,
           p_step_id: 'finalize',
           p_step_label: 'Final SEO optimization',
@@ -783,7 +783,7 @@ export const writeAEOBlog = inngest.createFunction(
         });
         
         // Update overall project status
-        await supabase.rpc('update_project_progress', {
+        await (supabase.rpc as any)('update_project_progress', {
           p_project_id: projectId,
           p_status: 'completed',
           p_current_section: null,

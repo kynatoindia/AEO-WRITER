@@ -4,26 +4,24 @@ import { useState, useEffect, Suspense } from 'react';
 import { useContentGeneration } from '@/lib/hooks/use-content-generation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
-import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Play,
   Pause,
   RefreshCw,
+  Copy,
+  Check,
   CheckCircle,
   Clock,
   FileText,
   Zap,
   AlertCircle,
-  Eye,
   Layout,
   Maximize2,
   Minimize2
 } from 'lucide-react';
 import { StreamingContentDisplay } from './streaming-content-display';
 import { BlueprintSidebar } from './blueprint-sidebar';
-import type { ContentBlueprint } from '@/lib/types';
 
 interface LiveWriterProps {
   projectId: string;
@@ -75,6 +73,7 @@ function LiveWriterContent({ projectId, onComplete, onError }: LiveWriterProps) 
   const [generatedContent, setGeneratedContent] = useState<Record<string, string>>({});
   const [isDemoRunning, setIsDemoRunning] = useState(false);
   const [demoContent, setDemoContent] = useState<Record<string, string>>({});
+  const [isFinalContentCopied, setIsFinalContentCopied] = useState(false);
 
   const {
     progress,
@@ -85,11 +84,50 @@ function LiveWriterContent({ projectId, onComplete, onError }: LiveWriterProps) 
     startGeneration,
     refreshProgress,
     isCompleted,
-    hasError,
     progressPercentage,
     estimatedTimeRemaining,
     clearError
   } = useContentGeneration({ projectId });
+
+  // Hydrate section state and content from persisted API data.
+  useEffect(() => {
+    if (!progress?.sections?.length) return;
+
+    setSectionProgress((prev) => {
+      const next = { ...prev };
+      let changed = false;
+
+      progress.sections.forEach((section) => {
+        const nextStatus = section.status || 'pending';
+        const nextWordCount = section.wordCount || 0;
+        const current = prev[section.id];
+
+        if (!current || current.status !== nextStatus || current.wordCount !== nextWordCount) {
+          next[section.id] = {
+            status: nextStatus,
+            wordCount: nextWordCount,
+          };
+          changed = true;
+        }
+      });
+
+      return changed ? next : prev;
+    });
+
+    setGeneratedContent((prev) => {
+      const next = { ...prev };
+      let changed = false;
+
+      progress.sections.forEach((section) => {
+        if (section.content && section.content.length > 0 && next[section.id] !== section.content) {
+          next[section.id] = section.content;
+          changed = true;
+        }
+      });
+
+      return changed ? next : prev;
+    });
+  }, [progress?.sections]);
 
   // Initialize current section when blueprint is available
   useEffect(() => {
@@ -109,10 +147,20 @@ function LiveWriterContent({ projectId, onComplete, onError }: LiveWriterProps) 
   useEffect(() => {
     realtimeEvents.forEach(event => {
       if (event.type === 'section_complete') {
-        const data = event.data as any;
+        const data = event.data as {
+          sectionId?: string;
+          wordCount?: number;
+          content?: string;
+        };
+
+        if (!data.sectionId) {
+          return;
+        }
+
+        const sectionId = data.sectionId as string;
         setSectionProgress(prev => ({
           ...prev,
-          [data.sectionId]: {
+          [sectionId]: {
             status: 'completed',
             wordCount: data.wordCount || 0
           }
@@ -121,7 +169,7 @@ function LiveWriterContent({ projectId, onComplete, onError }: LiveWriterProps) 
         if (data.content) {
           setGeneratedContent(prev => ({
             ...prev,
-            [data.sectionId]: data.content
+            [sectionId]: data.content as string
           }));
         }
       }
@@ -139,9 +187,11 @@ function LiveWriterContent({ projectId, onComplete, onError }: LiveWriterProps) 
 
       if (fullContent) {
         onComplete(fullContent);
+      } else if (progress.finalContent) {
+        onComplete(progress.finalContent);
       }
     }
-  }, [isCompleted, progress?.status, progress?.blueprint, generatedContent, onComplete]);
+  }, [isCompleted, progress?.status, progress?.blueprint, progress?.finalContent, generatedContent, onComplete]);
 
   // Handle errors
   useEffect(() => {
@@ -281,6 +331,7 @@ function LiveWriterContent({ projectId, onComplete, onError }: LiveWriterProps) 
   };
 
   const handleSectionError = (sectionId: string, error: string) => {
+    void error;
     setSectionProgress(prev => ({
       ...prev,
       [sectionId]: {
@@ -288,6 +339,18 @@ function LiveWriterContent({ projectId, onComplete, onError }: LiveWriterProps) 
         wordCount: prev[sectionId]?.wordCount || 0
       }
     }));
+  };
+
+  const handleCopyFinalContent = async () => {
+    if (!progress?.finalContent) return;
+
+    try {
+      await navigator.clipboard.writeText(progress.finalContent);
+      setIsFinalContentCopied(true);
+      setTimeout(() => setIsFinalContentCopied(false), 2000);
+    } catch (copyError) {
+      console.error('Failed to copy final content:', copyError);
+    }
   };
 
   const formatTime = (seconds: number) => {
@@ -496,22 +559,65 @@ function LiveWriterContent({ projectId, onComplete, onError }: LiveWriterProps) 
       )}
 
       {/* Main Content Area */}
-      {progress?.blueprint && (
-        <div className="flex-1 flex gap-6 p-6 min-h-0">
+      {(progress?.blueprint || (isCompleted && progress?.finalContent)) && (
+        <div className={`flex-1 p-6 min-h-0 ${progress?.blueprint ? 'flex gap-6' : ''}`}>
           {/* Blueprint Sidebar */}
-          <div className="w-80 flex-shrink-0">
-            <BlueprintSidebar
-              blueprint={progress.blueprint}
-              currentSectionId={currentSectionId || undefined}
-              sectionProgress={sectionProgress}
-              onSectionSelect={setCurrentSectionId}
-              className="h-full"
-            />
-          </div>
+          {progress?.blueprint && (
+            <div className="w-80 flex-shrink-0">
+              <BlueprintSidebar
+                blueprint={progress.blueprint}
+                currentSectionId={currentSectionId || undefined}
+                sectionProgress={sectionProgress}
+                onSectionSelect={setCurrentSectionId}
+                className="h-full"
+              />
+            </div>
+          )}
 
           {/* Streaming Content Display */}
-          <div className="flex-1 min-w-0">
-            {getCurrentSection() ? (
+          <div className={progress?.blueprint ? 'flex-1 min-w-0' : 'h-full'}>
+            {isCompleted && progress.finalContent ? (
+              <Card className="h-full glass-card border border-border flex flex-col overflow-hidden">
+                <CardHeader className="border-b border-border bg-gradient-to-r from-green-500/10 to-emerald-500/5">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <CheckCircle className="h-5 w-5 text-green-400" />
+                        Final Generated Content
+                      </CardTitle>
+                      <CardDescription>
+                        Your content is complete and ready to use.
+                      </CardDescription>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleCopyFinalContent}
+                      className="glass-card border-border hover:bg-surface-1 rounded-xl"
+                    >
+                      {isFinalContentCopied ? (
+                        <>
+                          <Check className="h-4 w-4 mr-2" />
+                          Copied
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-4 w-4 mr-2" />
+                          Copy Final
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="flex-1 overflow-auto p-6">
+                  <div className="prose prose-invert max-w-none">
+                    <article className="whitespace-pre-wrap leading-relaxed text-foreground">
+                      {progress.finalContent}
+                    </article>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : progress?.blueprint && getCurrentSection() ? (
               <div className="h-full">
                 {isDemoRunning && currentSectionId && demoContent[currentSectionId] ? (
                   <div className="glass-card rounded-3xl border border-border h-full relative overflow-hidden">

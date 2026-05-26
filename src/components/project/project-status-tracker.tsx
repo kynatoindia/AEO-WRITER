@@ -61,6 +61,12 @@ const statusConfig = {
     color: 'bg-green-500',
     description: 'Generating content sections',
   },
+  finalizing: {
+    label: 'Finalizing',
+    icon: CheckCircle,
+    color: 'bg-teal-500',
+    description: 'Finalizing content and SEO optimization',
+  },
   completed: {
     label: 'Completed',
     icon: CheckCircle,
@@ -180,7 +186,7 @@ export function ProjectStatusTracker({
             </div>
             <div className="flex items-center gap-2">
               <div className={`h-2 w-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
-              <span className="text-xs text-gray-500">
+              <span className="text-xs text-muted-foreground">
                 {isConnected ? 'Live' : 'Disconnected'}
               </span>
             </div>
@@ -198,9 +204,9 @@ export function ProjectStatusTracker({
 
           {/* Current Message */}
           {message && (
-            <div className="flex items-center gap-2 p-3 bg-blue-50 rounded-lg">
-              <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
-              <span className="text-sm text-blue-700">{message}</span>
+            <div className="flex items-center gap-2 p-3 rounded-xl border border-primary/20 bg-primary/5">
+              <Loader2 className="h-4 w-4 animate-spin text-primary flex-shrink-0" />
+              <span className="text-sm text-foreground/80">{message}</span>
             </div>
           )}
 
@@ -210,13 +216,13 @@ export function ProjectStatusTracker({
               <div key={step.key} className="flex flex-col items-center">
                 <div className={`
                   w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium
-                  ${step.isCompleted 
-                    ? 'bg-green-500 text-white' 
-                    : step.isActive 
-                      ? step.isError 
-                        ? 'bg-red-500 text-white'
-                        : 'bg-blue-500 text-white'
-                      : 'bg-gray-200 text-gray-500'
+                  ${step.isCompleted
+                    ? 'bg-green-500 text-white'
+                    : step.isActive
+                      ? step.isError
+                        ? 'bg-destructive text-white'
+                        : 'bg-primary text-white'
+                      : 'bg-white/10 text-muted-foreground'
                   }
                 `}>
                   {step.isCompleted ? (
@@ -236,17 +242,17 @@ export function ProjectStatusTracker({
 
           {/* Metadata Display */}
           {metadata && (
-            <div className="grid grid-cols-2 gap-4 p-3 bg-gray-50 rounded-lg">
+            <div className="grid grid-cols-2 gap-4 p-3 rounded-xl border border-white/10 bg-white/5">
               {metadata.initialization && (
                 <>
                   <div>
-                    <span className="text-xs text-gray-500">Brand Document</span>
+                    <span className="text-xs text-muted-foreground">Brand Document</span>
                     <p className="text-sm font-medium">
                       {metadata.initialization.brandDocumentProcessed ? 'Processed' : 'None'}
                     </p>
                   </div>
                   <div>
-                    <span className="text-xs text-gray-500">Competitor URLs</span>
+                    <span className="text-xs text-muted-foreground">Competitor URLs</span>
                     <p className="text-sm font-medium">
                       {metadata.initialization.validCompetitorUrls}/{metadata.initialization.totalCompetitorUrls}
                     </p>
@@ -255,13 +261,13 @@ export function ProjectStatusTracker({
               )}
               {metadata.estimatedCost && (
                 <div>
-                  <span className="text-xs text-gray-500">Estimated Cost</span>
+                  <span className="text-xs text-muted-foreground">Estimated Cost</span>
                   <p className="text-sm font-medium">${metadata.estimatedCost}</p>
                 </div>
               )}
               {metadata.estimatedTokens && (
                 <div>
-                  <span className="text-xs text-gray-500">Estimated Tokens</span>
+                  <span className="text-xs text-muted-foreground">Estimated Tokens</span>
                   <p className="text-sm font-medium">{metadata.estimatedTokens.toLocaleString()}</p>
                 </div>
               )}
@@ -279,7 +285,7 @@ export function ProjectStatusTracker({
           <CardContent>
             <div className="space-y-3">
               {updates.slice(0, 5).map((update, index) => (
-                <div key={index} className="flex items-start gap-3 p-2 rounded-lg hover:bg-gray-50">
+                <div key={index} className="flex items-start gap-3 p-2 rounded-lg hover:bg-white/5 transition-colors">
                   <Badge variant="outline" className="text-xs">
                     {formatTimestamp(update.timestamp)}
                   </Badge>
@@ -289,7 +295,7 @@ export function ProjectStatusTracker({
                       <Badge variant="secondary" className="text-xs">
                         {statusConfig[update.status].label}
                       </Badge>
-                      <span className="text-xs text-gray-500">
+                      <span className="text-xs text-muted-foreground">
                         {update.progress}% complete
                       </span>
                     </div>

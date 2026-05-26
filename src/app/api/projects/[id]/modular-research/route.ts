@@ -9,6 +9,7 @@ const ModularResearchRequestSchema = z.object({
   topic: z.string().min(1).max(200),
   tone: z.enum(['professional', 'casual', 'academic', 'conversational', 'authoritative']),
   format: z.enum(['blog-post', 'guide', 'tutorial', 'comparison', 'review', 'case-study']),
+  competitorUrls: z.array(z.string().url()).max(5).optional(),
   industry: z.string().optional(),
   targetAudience: z.string().optional(),
   brandDocumentPath: z.string().optional()
@@ -43,7 +44,7 @@ export async function POST(
     // Verify project ownership
     const { data: project, error: projectError } = await supabase
       .from('projects')
-      .select('id, user_id, status')
+      .select('id, user_id, status, competitor_urls')
       .eq('id', projectId)
       .eq('user_id', user.id)
       .single();
@@ -56,7 +57,7 @@ export async function POST(
     }
 
     // Check if project is in correct state for research
-    if (project.status !== 'created' && project.status !== 'planning') {
+    if ((project.status as string) !== 'created' && project.status !== 'planning') {
       return NextResponse.json(
         { error: `Cannot start research for project in ${project.status} status` },
         { status: 400 }
@@ -64,7 +65,7 @@ export async function POST(
     }
 
     // Check user quota for research operations
-    const quotaCheck = await checkQuota(user.id, 'free', 'research'); // Get actual plan from DB
+    const quotaCheck = await checkQuota(user.id, 'free', 'contentGeneration'); // Get actual plan from DB
 
     if (!quotaCheck.allowed) {
       return NextResponse.json(
@@ -95,6 +96,10 @@ export async function POST(
       );
     }
 
+    const competitorUrls = Array.isArray(validatedData.competitorUrls) && validatedData.competitorUrls.length > 0
+      ? validatedData.competitorUrls
+      : (Array.isArray(project.competitor_urls) ? project.competitor_urls : []);
+
     // Trigger Modular Agentic Research Pipeline
     const researchEvent = await inngest.send({
       name: 'project/modular-research-started',
@@ -104,6 +109,7 @@ export async function POST(
         topic: validatedData.topic,
         tone: validatedData.tone,
         format: validatedData.format,
+        competitorUrls,
         industry: validatedData.industry,
         targetAudience: validatedData.targetAudience,
         brandDocumentPath: validatedData.brandDocumentPath,
@@ -136,7 +142,7 @@ export async function POST(
       return NextResponse.json(
         {
           error: 'Invalid request data',
-          details: error.errors
+          details: error.issues
         },
         { status: 400 }
       );

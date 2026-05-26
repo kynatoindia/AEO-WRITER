@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
         title: 'Test Research Project',
         topic: 'Digital Marketing Strategy',
         tone: 'professional',
-        format: 'blog_post',
+        format: 'how-to',
         status: 'draft'
       })
       .select()

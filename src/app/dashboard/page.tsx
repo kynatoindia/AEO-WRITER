@@ -49,7 +49,7 @@ export default async function DashboardPage() {
       </header>
 
       <main className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8 relative z-10">
-        <DashboardContent user={user} initialProjects={projects || []} />
+        <DashboardContent user={user} initialProjects={(projects || []) as any} />
       </main>
     </div>
   );

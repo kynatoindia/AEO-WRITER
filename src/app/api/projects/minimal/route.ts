@@ -86,7 +86,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<APIRespon
       .insert({
         user_id: user.id,
         topic: validationResult.data.topic,
-        competitor_urls: validationResult.data.competitorUrls,
+        competitor_urls: projectData.competitorUrls,
         tone: validationResult.data.tone as any,
         format: validationResult.data.format as any,
         brand_document_path: null, // Skip file upload for now

@@ -75,11 +75,11 @@ export function SubSectionEditor({
   const canEdit = isEditing || isEditingLocal;
 
   return (
-    <Card className="border-l-4 border-l-blue-200">
+    <Card className="border-l-4 border-l-primary/40">
       <CardContent className="p-3">
         <div className="flex items-start gap-3">
           {/* Sub-section Number */}
-          <div className="flex items-center justify-center w-6 h-6 bg-gray-100 text-gray-600 rounded text-xs font-medium flex-shrink-0 mt-0.5">
+          <div className="flex items-center justify-center w-6 h-6 bg-white/10 text-muted-foreground border border-white/10 rounded text-xs font-medium flex-shrink-0 mt-0.5">
             {index + 1}
           </div>
           
@@ -152,7 +152,7 @@ export function SubSectionEditor({
                   <div className="space-y-1">
                     {subSection.keyPoints.map((point, pointIndex) => (
                       <div key={pointIndex} className="flex items-start gap-2 text-sm text-muted-foreground">
-                        <span className="text-gray-400 mt-0.5">•</span>
+                        <span className="text-muted-foreground mt-0.5">•</span>
                         <span>{point}</span>
                       </div>
                     ))}

@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useSearchParams } from 'next/navigation';
 
-export default function TestCallbackPage() {
+function TestCallbackContent() {
   const [status, setStatus] = useState('Loading...');
   const [details, setDetails] = useState<any>(null);
   const searchParams = useSearchParams();
@@ -13,9 +13,8 @@ export default function TestCallbackPage() {
   useEffect(() => {
     const testAuth = async () => {
       try {
-        // Get current session
         const { data: session, error: sessionError } = await supabase.auth.getSession();
-        
+
         if (sessionError) {
           setStatus('Session Error');
           setDetails({ error: sessionError.message });
@@ -31,14 +30,14 @@ export default function TestCallbackPage() {
           });
         } else {
           setStatus('Not Authenticated');
-          setDetails({ 
+          setDetails({
             searchParams: Object.fromEntries(searchParams.entries()),
             url: window.location.href
           });
         }
       } catch (error) {
         setStatus('Error');
-        setDetails({ error: error.message });
+        setDetails({ error: error instanceof Error ? error.message : String(error) });
       }
     };
 
@@ -54,7 +53,7 @@ export default function TestCallbackPage() {
           {JSON.stringify(details, null, 2)}
         </pre>
       </div>
-      
+
       <div className="mt-6 space-y-2">
         <a href="/auth/login" className="block text-blue-600 hover:underline">
           Go to Login
@@ -64,5 +63,13 @@ export default function TestCallbackPage() {
         </a>
       </div>
     </div>
+  );
+}
+
+export default function TestCallbackPage() {
+  return (
+    <Suspense fallback={<div className="max-w-2xl mx-auto p-6">Loading...</div>}>
+      <TestCallbackContent />
+    </Suspense>
   );
 }

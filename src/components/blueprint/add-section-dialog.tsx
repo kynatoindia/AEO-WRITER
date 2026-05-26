@@ -175,7 +175,7 @@ export function AddSectionDialog({
             {subSections.length > 0 && (
               <div className="space-y-2 mb-3">
                 {subSections.map((subSection, index) => (
-                  <div key={index} className="flex items-center gap-2 p-2 bg-gray-50 rounded">
+                  <div key={index} className="flex items-center gap-2 p-2 rounded-lg bg-white/5 border border-white/10">
                     <span className="text-sm flex-1">{subSection.heading}</span>
                     <Button
                       size="sm"

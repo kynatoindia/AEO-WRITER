@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
       supabaseTest = 'import successful';
       console.log('Test 3: Supabase import - OK');
     } catch (error) {
-      supabaseTest = `import failed: ${error.message}`;
+      supabaseTest = `import failed: ${error instanceof Error ? error.message : String(error)}`;
       console.error('Test 3: Supabase import failed:', error);
     }
     
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
         clientTest = 'client creation successful';
         console.log('Test 4: Supabase client creation - OK');
       } catch (error) {
-        clientTest = `client creation failed: ${error.message}`;
+        clientTest = `client creation failed: ${error instanceof Error ? error.message : String(error)}`;
         console.error('Test 4: Supabase client creation failed:', error);
       }
     }

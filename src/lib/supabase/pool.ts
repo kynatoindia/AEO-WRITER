@@ -116,7 +116,7 @@ class ConnectionPoolManager {
       const start = Date.now();
       
       // Simple health check query
-      const { data, error } = await supabaseAdmin
+      const { data, error } = await (supabaseAdmin as any)
         .from('profiles')
         .select('count')
         .limit(1)
@@ -317,7 +317,7 @@ export const getDatabaseConfig = () => {
 };
 
 // Export the enhanced clients and utilities
-export { poolManager, DatabaseManager };
+export { poolManager };
 
 // Legacy exports for backward compatibility
 export { supabaseAdmin as supabase };

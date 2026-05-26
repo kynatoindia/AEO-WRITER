@@ -6,6 +6,21 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+let statusHistoryTableUnavailable = false;
+let statusHistoryWarningLogged = false;
+
+function isMissingStatusHistoryTableError(error: { code?: string; message?: string } | null | undefined): boolean {
+  if (!error) return false;
+
+  const message = (error.message || '').toLowerCase();
+  return (
+    error.code === 'PGRST205' ||
+    error.code === '42P01' ||
+    message.includes('project_status_updates') && message.includes('could not find the table') ||
+    message.includes('relation') && message.includes('project_status_updates') && message.includes('does not exist')
+  );
+}
+
 export type ProjectStatus =
   | 'created'
   | 'initializing'
@@ -25,7 +40,7 @@ export interface StatusUpdate {
   progress?: number; // 0-100
   currentStep?: string;
   estimatedTimeRemaining?: number; // seconds
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -40,19 +55,10 @@ export async function updateProjectStatus(
     progress?: number;
     currentStep?: string;
     estimatedTimeRemaining?: number;
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
   }
 ): Promise<void> {
   try {
-    const statusUpdate: StatusUpdate = {
-      status,
-      message,
-      progress: options?.progress,
-      currentStep: options?.currentStep,
-      estimatedTimeRemaining: options?.estimatedTimeRemaining,
-      metadata: options?.metadata,
-    };
-
     // Update the projects table with current status
     const { error: projectError } = await supabase
       .from('projects')
@@ -70,22 +76,35 @@ export async function updateProjectStatus(
       return;
     }
 
-    // Also log to status_updates table for history tracking
-    const { error: logError } = await supabase
-      .from('project_status_updates')
-      .insert({
-        project_id: projectId,
-        status,
-        message,
-        progress: options?.progress || null,
-        current_step: options?.currentStep || null,
-        estimated_time_remaining: options?.estimatedTimeRemaining || null,
-        metadata: options?.metadata || null,
-        created_at: new Date().toISOString(),
-      });
+    // Also log to status_updates table for history tracking (if available)
+    if (!statusHistoryTableUnavailable) {
+      const { error: logError } = await supabase
+        .from('project_status_updates')
+        .insert({
+          project_id: projectId,
+          status,
+          message,
+          progress: options?.progress || null,
+          current_step: options?.currentStep || null,
+          estimated_time_remaining: options?.estimatedTimeRemaining || null,
+          metadata: options?.metadata || null,
+          created_at: new Date().toISOString(),
+        });
 
-    if (logError) {
-      console.error('Failed to log status update:', logError);
+      if (logError) {
+        if (isMissingStatusHistoryTableError(logError)) {
+          statusHistoryTableUnavailable = true;
+
+          if (!statusHistoryWarningLogged) {
+            statusHistoryWarningLogged = true;
+            console.warn(
+              'project_status_updates table is missing; continuing with projects.status updates only.'
+            );
+          }
+        } else {
+          console.error('Failed to log status update:', logError);
+        }
+      }
     }
 
     console.log(`Project ${projectId} status updated: ${status} - ${message}`);

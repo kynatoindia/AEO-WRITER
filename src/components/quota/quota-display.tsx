@@ -65,8 +65,8 @@ export function QuotaDisplay() {
           <div className="space-y-4">
             {[1, 2, 3].map((i) => (
               <div key={i} className="space-y-2">
-                <div className="h-4 bg-gray-200 rounded animate-pulse" />
-                <div className="h-2 bg-gray-100 rounded animate-pulse" />
+                <div className="h-4 bg-white/10 rounded-lg animate-pulse" />
+                <div className="h-2 bg-white/5 rounded-lg animate-pulse" />
               </div>
             ))}
           </div>
@@ -167,12 +167,12 @@ export function QuotaDisplay() {
           {notifications.map((notification) => (
             <div
               key={notification.id}
-              className={`p-3 rounded-md border flex items-center justify-between ${
-                notification.type === 'error' 
-                  ? 'bg-red-50 border-red-200 text-red-800'
+              className={`p-3 rounded-xl border flex items-center justify-between ${
+                notification.type === 'error'
+                  ? 'bg-destructive/10 border-destructive/20 text-destructive'
                   : notification.type === 'warning'
-                  ? 'bg-yellow-50 border-yellow-200 text-yellow-800'
-                  : 'bg-blue-50 border-blue-200 text-blue-800'
+                  ? 'bg-yellow-500/10 border-yellow-500/20 text-yellow-400'
+                  : 'bg-primary/10 border-primary/20 text-primary'
               }`}
             >
               <div className="flex items-center gap-2">
@@ -205,9 +205,9 @@ export function QuotaDisplay() {
                 {isConnected ? (
                   <Wifi className="w-3 h-3 text-green-500" />
                 ) : (
-                  <WifiOff className="w-3 h-3 text-gray-400" />
+                  <WifiOff className="w-3 h-3 text-muted-foreground" />
                 )}
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-muted-foreground">
                   {isConnected ? 'Live' : 'Offline'}
                 </span>
               </div>
@@ -256,7 +256,7 @@ export function QuotaDisplay() {
                             </Badge>
                           )}
                         </p>
-                        <p className="text-xs text-gray-500">{item.description}</p>
+                        <p className="text-xs text-muted-foreground">{item.description}</p>
                       </div>
                     </div>
                     <div className="text-right">
@@ -265,7 +265,7 @@ export function QuotaDisplay() {
                         {item.isCost ? formatCost(quota.limit) : formatNumber(quota.limit)}
                       </p>
                       {quota.limit > 0 && (
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-muted-foreground">
                           {formatNumber(quota.remaining)} remaining
                         </p>
                       )}
@@ -282,7 +282,7 @@ export function QuotaDisplay() {
                           '--progress-background': getStatusColor(status),
                         } as any}
                       />
-                      <div className="flex justify-between text-xs text-gray-500">
+                      <div className="flex justify-between text-xs text-muted-foreground">
                         <span>{percentage.toFixed(1)}% used</span>
                         {item.key === 'apiCalls' ? (
                           <span>Resets tomorrow</span>
@@ -294,17 +294,17 @@ export function QuotaDisplay() {
                   )}
                   
                   {status === 'exceeded' && (
-                    <div className="bg-red-50 border border-red-200 rounded-md p-2">
-                      <p className="text-xs text-red-600">
+                    <div className="status-error-modern rounded-xl p-2">
+                      <p className="text-xs">
                         Limit exceeded. {item.key === 'projects' ? 'Upgrade your plan to create more projects.' : 'Usage will reset on the next billing cycle.'}
                       </p>
                     </div>
                   )}
-                  
+
                   {status === 'critical' && (
-                    <div className="bg-orange-50 border border-orange-200 rounded-md p-2">
-                      <p className="text-xs text-orange-600">
-                        You're approaching your limit. Consider upgrading your plan.
+                    <div className="status-warning-modern rounded-xl p-2">
+                      <p className="text-xs">
+                        You&apos;re approaching your limit. Consider upgrading your plan.
                       </p>
                     </div>
                   )}
@@ -314,15 +314,15 @@ export function QuotaDisplay() {
             
             {/* Plan upgrade suggestion */}
             {quotas.plan === 'free' && (
-              <div className="bg-blue-50 border border-blue-200 rounded-md p-4 mt-4">
+              <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 mt-4">
                 <div className="flex items-center gap-2 mb-2">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full" />
-                  <p className="font-medium text-sm text-blue-900">Upgrade to Pro</p>
+                  <div className="w-2 h-2 bg-primary rounded-full" />
+                  <p className="font-semibold text-sm text-foreground">Upgrade to Pro</p>
                 </div>
-                <p className="text-xs text-blue-700 mb-3">
+                <p className="text-xs text-muted-foreground mb-3">
                   Get 50x more content generation, 500K tokens, and 50 projects for just $29/month.
                 </p>
-                <Button size="sm" className="bg-blue-600 hover:bg-blue-700">
+                <Button size="sm">
                   Upgrade Now
                 </Button>
               </div>

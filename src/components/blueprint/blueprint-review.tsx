@@ -180,7 +180,7 @@ export function BlueprintReview({
           
           {/* SEO Metadata */}
           {localBlueprint.seoMetadata && (
-            <div className="mt-4 p-4 bg-blue-50 rounded-lg">
+            <div className="mt-4 p-4 rounded-xl border border-primary/20 bg-primary/5">
               <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
                 <Target className="h-4 w-4" />
                 SEO Strategy

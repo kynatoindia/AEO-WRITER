@@ -128,8 +128,9 @@ class InfrastructureMonitor {
     for (const provider of providers) {
       try {
         // Check cached health status
-        const cachedHealth = await redis.get(`ai:${provider}:status`);
-        
+        const cachedHealthRaw = await redis.get(`ai:${provider}:status`);
+        const cachedHealth = cachedHealthRaw as any;
+
         results.push({
           service: `ai-${provider}`,
           healthy: cachedHealth?.healthy ?? true,
@@ -381,4 +382,4 @@ export class ErrorTracker {
 }
 
 // Export utilities
-export { monitor, PerformanceMonitor, ErrorTracker };
+export { monitor };

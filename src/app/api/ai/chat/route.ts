@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
     await incrementUsage(user.id, 'apiCalls');
 
     // Return the AI SDK stream directly
-    return streamingResponse.stream.toDataStreamResponse();
+    return streamingResponse.stream.toTextStreamResponse();
   } catch (error) {
     console.error('AI chat error:', error);
     return new Response(

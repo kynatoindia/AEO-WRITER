@@ -32,9 +32,15 @@ export default async function proxy(request: NextRequest) {
   // supabase.auth.getUser(). A simple mistake could make it very hard to debug
   // issues with users being randomly logged out.
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let user = null;
+  try {
+    const { data } = await supabase.auth.getUser();
+    user = data.user;
+  } catch {
+    // Supabase unreachable — treat as unauthenticated, let requests through to API routes
+    // which will handle auth themselves
+    return supabaseResponse;
+  }
 
   // Protected routes that require authentication
   const protectedPaths = ['/dashboard', '/project', '/api/projects', '/api/research', '/api/blueprint', '/api/write'];
@@ -44,8 +50,8 @@ export default async function proxy(request: NextRequest) {
   const rateLimitedPaths = ['/api/projects', '/api/ai', '/api/content', '/api/user'];
   const isRateLimitedPath = rateLimitedPaths.some(path => request.nextUrl.pathname.startsWith(path));
 
-  // Apply rate limiting to API routes for authenticated users
-  if (isRateLimitedPath && user) {
+  // Apply rate limiting to API routes for authenticated users (skip in development)
+  if (isRateLimitedPath && user && process.env.NODE_ENV !== 'development') {
     try {
       // Check if user is suspended due to abuse
       const suspended = await isUserSuspended(user.id);

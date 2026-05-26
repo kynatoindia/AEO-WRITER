@@ -1,7 +1,18 @@
 import { inngest } from './client';
 import { generateAIText, generateStructuredOutput } from '@/lib/ai/gateway';
-import { createRouteClient } from '@/lib/supabase/server';
+import { createClient } from '@supabase/supabase-js';
 import { z } from 'zod';
+
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
+
+const FAST_PIPELINE_MODE = process.env.AEO_FAST_MODE !== 'false';
+const MAX_GENERATION_SECTIONS = Number.isFinite(Number(process.env.AEO_MAX_SECTIONS))
+  ? Math.max(2, Number(process.env.AEO_MAX_SECTIONS))
+  : (FAST_PIPELINE_MODE ? 4 : 6);
+const SECTION_WORD_TARGET = FAST_PIPELINE_MODE ? '220-320' : '300-500';
 
 // Schema for structured blueprint generation
 const BlueprintSchema = z.object({
@@ -38,9 +49,9 @@ export const generateContentStrategy = inngest.createFunction(
     concurrency: [
       { limit: 1, key: 'event.data.userId' },
       {
-        limit: 1,
+        limit: 2,
         scope: "account",
-        key: '"gemini-quota-limit"', // Global Gemini quota limit protection
+        key: '"ai-provider-limit"', // Global AI provider limit protection
       }
     ],
   },
@@ -50,7 +61,7 @@ export const generateContentStrategy = inngest.createFunction(
     
     // Get project from database
     const project = await step.run('fetch-project', async () => {
-      const supabase = await createRouteClient();
+      const supabase = supabaseAdmin;
       const { data, error } = await supabase
         .from('projects')
         .select('*')
@@ -73,7 +84,7 @@ export const generateContentStrategy = inngest.createFunction(
         ${JSON.stringify(researchData, null, 2)}
         
         Requirements:
-        1. Create 5-8 main sections that provide comprehensive coverage
+        1. Create ${FAST_PIPELINE_MODE ? '4-6' : '5-8'} main sections that provide comprehensive coverage
         2. Each section should have a clear goal and 2-4 sub-sections
         3. Include specific content elements (tables, lists, FAQs) where appropriate
         4. Optimize for SEO with target keywords
@@ -91,23 +102,34 @@ export const generateContentStrategy = inngest.createFunction(
       
       return result.object;
     });
+
+    const optimizedBlueprint = {
+      ...blueprint,
+      sections: blueprint.sections
+        .slice(0, MAX_GENERATION_SECTIONS)
+        .map((section, index) => ({
+          ...section,
+          order: index + 1,
+        })),
+      estimatedLength: Math.max(1200, Math.round((blueprint.estimatedLength || 2000) * (MAX_GENERATION_SECTIONS / Math.max(1, blueprint.sections.length)))),
+    };
     
     // Store blueprint and update project
     await step.run('store-blueprint', async () => {
-      const supabase = await createRouteClient();
+      const supabase = supabaseAdmin;
       
       // Update project with blueprint
       await supabase
         .from('projects')
         .update({
-          blueprint,
+          blueprint: optimizedBlueprint,
           status: 'writing',
           updated_at: new Date().toISOString()
         })
         .eq('id', projectId);
       
       // Create content sections
-      const sectionsToInsert = blueprint.sections.map(section => ({
+      const sectionsToInsert = optimizedBlueprint.sections.map(section => ({
         project_id: projectId,
         section_order: section.order,
         heading: section.heading,
@@ -125,14 +147,14 @@ export const generateContentStrategy = inngest.createFunction(
     
     // Trigger section generation
     await step.run('trigger-sections', async () => {
-      const fanOutEvents = blueprint.sections.map(section => ({
+      const fanOutEvents = optimizedBlueprint.sections.map(section => ({
         name: 'content/section-generate' as const,
         data: {
           userId,
           projectId,
           sectionId: section.id,
           section,
-          blueprint,
+          blueprint: optimizedBlueprint,
           researchData
         }
       }));
@@ -142,8 +164,8 @@ export const generateContentStrategy = inngest.createFunction(
     
     return {
       success: true,
-      blueprint,
-      sectionsCount: blueprint.sections.length
+      blueprint: optimizedBlueprint,
+      sectionsCount: optimizedBlueprint.sections.length
     };
   }
 );
@@ -155,9 +177,9 @@ export const generateContentSection = inngest.createFunction(
     concurrency: [
       { limit: 2, key: 'event.data.projectId' },
       {
-        limit: 1,
+        limit: 2,
         scope: "account",
-        key: '"gemini-quota-limit"', // Global Gemini quota limit protection
+        key: '"ai-provider-limit"', // Global AI provider limit protection
       }
     ],
   },
@@ -167,7 +189,7 @@ export const generateContentSection = inngest.createFunction(
     
     // Update section status to writing
     await step.run('update-status', async () => {
-      const supabase = await createRouteClient();
+      const supabase = supabaseAdmin;
       await supabase
         .from('content_sections')
         .update({ status: 'writing' })
@@ -177,7 +199,7 @@ export const generateContentSection = inngest.createFunction(
     
     // Get previous sections for context
     const previousSections = await step.run('get-context', async () => {
-      const supabase = await createRouteClient();
+      const supabase = supabaseAdmin;
       const { data } = await supabase
         .from('content_sections')
         .select('heading, generated_content')
@@ -202,7 +224,7 @@ export const generateContentSection = inngest.createFunction(
         ${previousSections.map((prev: any) => `${prev.heading}: ${prev.generated_content?.substring(0, 200)}...`).join('\n')}
         
         Requirements:
-        1. Write 300-500 words for this section
+        1. Write ${SECTION_WORD_TARGET} words for this section
         2. Use natural keyword integration
         3. Write in a ${blueprint.seoMetadata.focusKeyword} tone
         4. Use markdown formatting
@@ -221,7 +243,7 @@ export const generateContentSection = inngest.createFunction(
     
     // Store generated content
     await step.run('store-content', async () => {
-      const supabase = await createRouteClient();
+      const supabase = supabaseAdmin;
       
       await supabase
         .from('content_sections')
@@ -235,7 +257,7 @@ export const generateContentSection = inngest.createFunction(
     
     // Check if all sections are complete
     await step.run('check-completion', async () => {
-      const supabase = await createRouteClient();
+      const supabase = supabaseAdmin;
       
       const { data: sections } = await supabase
         .from('content_sections')
@@ -268,9 +290,9 @@ export const assembleAndPolishContent = inngest.createFunction(
     concurrency: [
       { limit: 1, key: 'event.data.projectId' },
       {
-        limit: 1,
+        limit: 2,
         scope: "account",
-        key: '"gemini-quota-limit"', // Global Gemini quota limit protection
+        key: '"ai-provider-limit"', // Global AI provider limit protection
       }
     ],
   },
@@ -280,7 +302,7 @@ export const assembleAndPolishContent = inngest.createFunction(
     
     // Fetch all completed sections
     const allSections = await step.run('fetch-sections', async () => {
-      const supabase = await createRouteClient();
+      const supabase = supabaseAdmin;
       
       const { data: sections, error } = await supabase
         .from('content_sections')
@@ -329,17 +351,31 @@ export const assembleAndPolishContent = inngest.createFunction(
     
     // Store final content
     await step.run('store-final', async () => {
-      const supabase = await createRouteClient();
+      const supabase = supabaseAdmin;
       
       await supabase
         .from('projects')
         .update({
           generated_content: finalContent,
           status: 'completed',
+          status_message: 'Content generation completed successfully.',
+          progress: 100,
           updated_at: new Date().toISOString()
         })
         .eq('id', projectId)
         .eq('user_id', userId);
+
+      await supabase
+        .channel(`project:${projectId}`)
+        .send({
+          type: 'broadcast',
+          event: 'project_complete',
+          payload: {
+            projectId,
+            status: 'completed',
+            wordCount: finalContent.split(' ').length,
+          }
+        });
     });
     
     return {

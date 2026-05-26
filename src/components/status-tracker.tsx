@@ -45,7 +45,7 @@ export default function StatusTracker({ projectId }: { projectId: string }) {
         }
 
         if (data) {
-          setStatus(data as ProjectStatus);
+          setStatus(data as unknown as ProjectStatus);
         }
       } catch (error) {
         console.error('Failed to fetch initial status:', error);
@@ -107,20 +107,20 @@ export default function StatusTracker({ projectId }: { projectId: string }) {
       case 'error':
         return <AlertCircle className="text-red-500 w-5 h-5" />;
       default:
-        return <Circle className="text-gray-300 w-5 h-5" />;
+        return <Circle className="text-muted-foreground/40 w-5 h-5" />;
     }
   };
 
   const getStepTextColor = (step: StatusStep) => {
     switch (step.state) {
       case 'completed':
-        return 'text-gray-500 line-through';
+        return 'text-muted-foreground line-through';
       case 'processing':
-        return 'text-blue-600 font-medium';
+        return 'text-primary font-medium';
       case 'error':
-        return 'text-red-600';
+        return 'text-destructive';
       default:
-        return 'text-gray-700';
+        return 'text-foreground/70';
     }
   };
 
@@ -170,7 +170,7 @@ export default function StatusTracker({ projectId }: { projectId: string }) {
           <span>Generation Progress</span>
           <div className="flex items-center gap-2 text-sm">
             <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
-            <span className="text-gray-500">
+            <span className="text-muted-foreground">
               {isConnected ? 'Live' : 'Disconnected'}
             </span>
           </div>
@@ -180,14 +180,14 @@ export default function StatusTracker({ projectId }: { projectId: string }) {
       
       <CardContent className="space-y-4">
         {/* Progress Bar */}
-        <div className="w-full bg-gray-200 rounded-full h-2">
+        <div className="w-full bg-white/10 rounded-full h-2">
           <div
-            className="bg-blue-500 h-2 rounded-full transition-all duration-500 ease-out"
+            className="bg-primary h-2 rounded-full transition-all duration-500 ease-out"
             style={{ width: `${getProgressPercentage()}%` }}
           />
         </div>
-        
-        <div className="text-sm text-gray-600 text-center">
+
+        <div className="text-sm text-muted-foreground text-center">
           {getProgressPercentage()}% Complete
         </div>
 
@@ -201,12 +201,12 @@ export default function StatusTracker({ projectId }: { projectId: string }) {
                   {step.label}
                 </span>
                 {step.details && (
-                  <div className="text-xs text-gray-500 mt-1">
+                  <div className="text-xs text-muted-foreground mt-1">
                     {step.details}
                   </div>
                 )}
                 {step.timestamp && (
-                  <div className="text-xs text-gray-400 mt-1">
+                  <div className="text-xs text-muted-foreground/60 mt-1">
                     {new Date(step.timestamp).toLocaleTimeString()}
                   </div>
                 )}
@@ -217,8 +217,8 @@ export default function StatusTracker({ projectId }: { projectId: string }) {
 
         {/* Current Section */}
         {status.current_section && status.status === 'processing' && (
-          <Alert className="border-blue-200 bg-blue-50">
-            <Clock className="h-4 w-4" />
+          <Alert className="border-primary/20 bg-primary/5">
+            <Clock className="h-4 w-4 text-primary" />
             <AlertDescription>
               <strong>Currently writing:</strong> {status.current_section}
             </AlertDescription>
@@ -227,8 +227,8 @@ export default function StatusTracker({ projectId }: { projectId: string }) {
 
         {/* Error Message */}
         {status.status === 'error' && status.error_message && (
-          <Alert className="border-red-200 bg-red-50">
-            <AlertCircle className="h-4 w-4" />
+          <Alert className="border-destructive/20 bg-destructive/5">
+            <AlertCircle className="h-4 w-4 text-destructive" />
             <AlertDescription>
               <strong>Error:</strong> {status.error_message}
             </AlertDescription>
@@ -237,17 +237,17 @@ export default function StatusTracker({ projectId }: { projectId: string }) {
 
         {/* Success Message */}
         {status.status === 'completed' && (
-          <Alert className="border-green-200 bg-green-50">
-            <CheckCircle2 className="h-4 w-4" />
+          <Alert className="border-green-500/20 bg-green-500/5">
+            <CheckCircle2 className="h-4 w-4 text-green-400" />
             <AlertDescription>
-              <strong>Success!</strong> Your blog has been generated successfully. 
+              <strong>Success!</strong> Your blog has been generated successfully.
               You can now review and publish it.
             </AlertDescription>
           </Alert>
         )}
 
         {/* Last Updated */}
-        <div className="text-xs text-gray-400 text-center pt-2 border-t">
+        <div className="text-xs text-muted-foreground/60 text-center pt-2 border-t border-white/10">
           Last updated: {new Date(status.updated_at).toLocaleString()}
         </div>
       </CardContent>

@@ -54,6 +54,7 @@ export type InngestEvents = {
       topic: string;
       tone: string;
       format: string;
+      competitorUrls?: string[];
       industry?: string;
       targetAudience?: string;
       brandDocumentPath?: string;

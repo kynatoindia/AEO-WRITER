@@ -58,7 +58,7 @@ async function ProjectContent({ projectId }: { projectId: string }) {
     notFound();
   }
 
-  const typedProject = project as Project;
+  const typedProject = project as unknown as Project;
 
   return <ProjectPageClient project={typedProject} />;
 }

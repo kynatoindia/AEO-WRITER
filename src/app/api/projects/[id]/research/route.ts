@@ -42,7 +42,7 @@ export async function POST(
     // Verify project exists and belongs to user
     const { data: project, error: projectError } = await supabase
       .from('projects')
-      .select('id, user_id, topic, tone, format, status')
+      .select('id, user_id, topic, tone, format, status, competitor_urls')
       .eq('id', projectId)
       .eq('user_id', user.id)
       .single();
@@ -60,7 +60,8 @@ export async function POST(
     }
 
     // Check if project is in a valid state for research
-    if (project.status !== 'draft' && project.status !== 'error') {
+    const retryableStates = new Set(['draft', 'error', 'stuck', 'researching']);
+    if (!retryableStates.has(project.status)) {
       return NextResponse.json({
         success: false,
         error: {
@@ -71,16 +72,6 @@ export async function POST(
         timestamp: new Date().toISOString(),
       }, { status: 400 });
     }
-
-    // Trigger modular research pipeline workflow (AI competitor discovery)
-    const eventData = {
-      userId: user.id,
-      projectId,
-      topic: project.topic,
-      tone: project.tone,
-      format: project.format,
-      brandDocumentPath: validatedData.brandDocument,
-    };
 
     // Update project status to indicate research has been queued
     const { error: updateError } = await supabase
@@ -101,10 +92,13 @@ export async function POST(
 
     console.log(`Triggering AI-powered research pipeline for project ${projectId}`);
 
-    // Try to send Inngest event, but don't fail if Inngest is not available
     let eventResult;
     try {
       // Always use modular research pipeline with AI competitor discovery
+      const competitorUrls = Array.isArray(validatedData.competitorUrls) && validatedData.competitorUrls.length > 0
+        ? validatedData.competitorUrls
+        : (Array.isArray(project.competitor_urls) ? project.competitor_urls : []);
+
       eventResult = await inngest.send({
         name: 'project/modular-research-started',
         data: {
@@ -113,6 +107,7 @@ export async function POST(
           topic: project.topic,
           tone: project.tone,
           format: project.format,
+          competitorUrls,
           industry: 'general', // Could be extracted from project data in the future
           targetAudience: 'general', // Could be extracted from project data in the future
           brandDocumentPath: validatedData.brandDocument,
@@ -120,9 +115,34 @@ export async function POST(
       });
       console.log('Modular research pipeline event sent successfully:', eventResult.ids[0]);
     } catch (inngestError) {
-      console.error('Inngest event failed (non-blocking):', inngestError);
-      // Continue without Inngest - we've already updated the status
-      eventResult = { ids: ['mock-event-id'] };
+      console.error('Inngest event failed:', inngestError);
+
+      const isDevServerDown = inngestError instanceof Error && inngestError.message.includes('fetch failed');
+      const userMessage = isDevServerDown
+        ? 'Inngest dev server is not running. Start it with: npm run dev:inngest'
+        : 'Failed to start research pipeline. Please try again.';
+
+      // Mark the project as error so frontend doesn't stay stuck in "researching"
+      await supabase
+        .from('projects')
+        .update({
+          status: 'error',
+          status_message: userMessage,
+          current_step: 'Queueing failed',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', projectId);
+
+      return NextResponse.json({
+        success: false,
+        error: {
+          code: 'PIPELINE_QUEUE_FAILED',
+          message: userMessage,
+          details: inngestError instanceof Error ? { error: inngestError.message } : undefined,
+          retryable: true,
+        },
+        timestamp: new Date().toISOString(),
+      }, { status: 503 });
     }
 
     return NextResponse.json({

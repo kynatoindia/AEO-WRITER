@@ -11,6 +11,7 @@ import type {
 interface ContentGenerationProgress {
   projectId: string;
   status: ProjectStatus;
+  statusMessage?: string | null;
   progress: number;
   totalSections: number;
   completedSections: number;
@@ -19,11 +20,14 @@ interface ContentGenerationProgress {
   estimatedTimeRemaining: number;
   currentSection?: string;
   blueprint?: ContentBlueprint;
+  finalContent?: string | null;
+  seoMetadata?: unknown;
   sections: Array<{
     id: string;
     heading: string;
     status: 'pending' | 'writing' | 'completed';
     wordCount: number;
+    content?: string;
   }>;
 }
 
@@ -55,6 +59,10 @@ export function useContentGeneration({
   });
   
   const supabase = createClient();
+
+  const isActiveGenerationStatus = useCallback((status: string) => {
+    return !['draft', 'completed', 'error'].includes(status);
+  }, []);
   
   // Fetch current progress from API
   const fetchProgress = useCallback(async () => {
@@ -74,7 +82,7 @@ export function useContentGeneration({
         ...prev,
         progress: result.data,
         isLoading: false,
-        isGenerating: ['planning', 'writing'].includes(result.data.status)
+        isGenerating: isActiveGenerationStatus(result.data.status)
       }));
       
     } catch (error) {
@@ -85,7 +93,7 @@ export function useContentGeneration({
         isLoading: false
       }));
     }
-  }, [projectId]);
+  }, [projectId, isActiveGenerationStatus]);
   
   // Start content generation
   const startGeneration = useCallback(async (options?: {
@@ -142,9 +150,13 @@ export function useContentGeneration({
   useEffect(() => {
     if (!projectId) return;
     
+    type BroadcastPayload = {
+      payload: Record<string, unknown>;
+    };
+
     const channel = supabase
       .channel(`project:${projectId}`)
-      .on('broadcast', { event: 'generation_started' }, (payload: any) => {
+      .on('broadcast', { event: 'generation_started' }, (payload: BroadcastPayload) => {
         console.log('Generation started:', payload);
         setState(prev => ({
           ...prev,
@@ -157,15 +169,22 @@ export function useContentGeneration({
           }]
         }));
       })
-      .on('broadcast', { event: 'strategy_complete' }, (payload: any) => {
+      .on('broadcast', { event: 'strategy_complete' }, (payload: BroadcastPayload) => {
         console.log('Strategy complete:', payload);
+        const eventPayload = payload.payload as {
+          blueprint?: ContentBlueprint;
+          sectionsCount?: number;
+        };
+
         setState(prev => ({
           ...prev,
           progress: prev.progress ? {
             ...prev.progress,
             status: 'writing',
-            blueprint: payload.payload.blueprint,
-            totalSections: payload.payload.sectionsCount
+            blueprint: eventPayload.blueprint,
+            totalSections: typeof eventPayload.sectionsCount === 'number'
+              ? eventPayload.sectionsCount
+              : prev.progress.totalSections
           } : null,
           realtimeEvents: [...prev.realtimeEvents, {
             type: 'project_update',
@@ -175,13 +194,17 @@ export function useContentGeneration({
           }]
         }));
       })
-      .on('broadcast', { event: 'section_started' }, (payload: any) => {
+      .on('broadcast', { event: 'section_started' }, (payload: BroadcastPayload) => {
         console.log('Section started:', payload);
+        const eventPayload = payload.payload as { heading?: string };
+
         setState(prev => ({
           ...prev,
           progress: prev.progress ? {
             ...prev.progress,
-            currentSection: payload.payload.heading,
+            currentSection: typeof eventPayload.heading === 'string'
+              ? eventPayload.heading
+              : prev.progress.currentSection,
             writingSections: prev.progress.writingSections + 1
           } : null,
           realtimeEvents: [...prev.realtimeEvents, {
@@ -192,8 +215,13 @@ export function useContentGeneration({
           }]
         }));
       })
-      .on('broadcast', { event: 'section_complete' }, (payload: any) => {
+      .on('broadcast', { event: 'section_complete' }, (payload: BroadcastPayload) => {
         console.log('Section complete:', payload);
+        const eventPayload = payload.payload as {
+          heading?: string;
+          wordCount?: number;
+        };
+
         setState(prev => {
           if (!prev.progress) return prev;
           
@@ -209,8 +237,12 @@ export function useContentGeneration({
               sectionsRemaining: prev.progress.totalSections - newCompletedSections,
               progress: newProgress,
               sections: prev.progress.sections.map(section => 
-                section.heading === payload.payload.heading
-                  ? { ...section, status: 'completed', wordCount: payload.payload.wordCount }
+                section.heading === eventPayload.heading
+                  ? {
+                    ...section,
+                    status: 'completed',
+                    wordCount: typeof eventPayload.wordCount === 'number' ? eventPayload.wordCount : section.wordCount
+                  }
                   : section
               )
             },
@@ -223,15 +255,14 @@ export function useContentGeneration({
           };
         });
       })
-      .on('broadcast', { event: 'project_complete' }, (payload: any) => {
+      .on('broadcast', { event: 'project_complete' }, (payload: BroadcastPayload) => {
         console.log('Project complete:', payload);
         setState(prev => ({
           ...prev,
           progress: prev.progress ? {
             ...prev.progress,
             status: 'completed',
-            progress: 100,
-            isGenerating: false
+            progress: 100
           } : null,
           isGenerating: false,
           realtimeEvents: [...prev.realtimeEvents, {
@@ -241,13 +272,33 @@ export function useContentGeneration({
             timestamp: new Date().toISOString()
           }]
         }));
+        void fetchProgress();
+      })
+      .on('broadcast', { event: 'finalization_complete' }, (payload: BroadcastPayload) => {
+        console.log('Finalization complete:', payload);
+        setState(prev => ({
+          ...prev,
+          progress: prev.progress ? {
+            ...prev.progress,
+            status: 'completed',
+            progress: 100
+          } : null,
+          isGenerating: false,
+          realtimeEvents: [...prev.realtimeEvents, {
+            type: 'project_update',
+            projectId,
+            data: payload.payload,
+            timestamp: new Date().toISOString()
+          }]
+        }));
+        void fetchProgress();
       })
       .subscribe();
     
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [projectId, supabase]);
+  }, [projectId, supabase, fetchProgress]);
   
   // Auto-refresh progress
   useEffect(() => {

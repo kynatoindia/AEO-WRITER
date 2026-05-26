@@ -88,7 +88,7 @@ export const generateContentStrategy = inngest.createFunction(
         throw new Error(`Project not found: ${error?.message}`);
       }
       
-      return project as Project;
+      return project as unknown as Project;
     });
     
     // Generate high-quality content strategy using GPT-4o
@@ -241,7 +241,7 @@ export const generateContentSection = inngest.createFunction(
     // Check for duplicate section requests
     const duplicateCheck = await step.run('check-duplicate-section', async () => {
       const existingResult = await redis.get(`idempotency:${idempotencyKey}`);
-      return existingResult ? JSON.parse(existingResult) : null;
+      return existingResult ? JSON.parse(existingResult as string) : null;
     });
     
     if (duplicateCheck) {
@@ -305,10 +305,10 @@ export const generateContentSection = inngest.createFunction(
         Section Goal: ${section.goal}
         
         Sub-sections to cover:
-        ${section.subSections.map(sub => `- ${sub.heading}: ${sub.keyPoints.join(', ')}`).join('\n')}
-        
+        ${section.subSections.map((sub: any) => `- ${sub.heading}: ${sub.keyPoints.join(', ')}`).join('\n')}
+
         Content Elements to include:
-        ${section.contentElements.map(el => `- ${el.type}: ${JSON.stringify(el.properties)}`).join('\n')}
+        ${section.contentElements.map((el: any) => `- ${el.type}: ${JSON.stringify(el.properties)}`).join('\n')}
         
         Research Context:
         ${JSON.stringify(researchData, null, 2)}
@@ -445,7 +445,7 @@ export const assembleAndPolishContent = inngest.createFunction(
     // Check for duplicate assembly requests
     const duplicateCheck = await step.run('check-duplicate-assembly', async () => {
       const existingResult = await redis.get(`idempotency:${idempotencyKey}`);
-      return existingResult ? JSON.parse(existingResult) : null;
+      return existingResult ? JSON.parse(existingResult as string) : null;
     });
     
     if (duplicateCheck) {

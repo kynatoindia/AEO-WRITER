@@ -14,21 +14,21 @@ try {
   const inngestModule = require('@/lib/inngest/client');
   inngest = inngestModule.inngest;
 } catch (error) {
-  console.warn('Inngest client not available:', error.message);
+  console.warn('Inngest client not available:', error instanceof Error ? error.message : String(error));
 }
 
 try {
   const quotaModule = require('@/lib/rate-limiting/quota');
   checkQuota = quotaModule.checkQuota;
 } catch (error) {
-  console.warn('Quota checking not available:', error.message);
+  console.warn('Quota checking not available:', error instanceof Error ? error.message : String(error));
 }
 
 try {
   const configModule = require('@/lib/infrastructure/config');
   INFRASTRUCTURE_CONFIG = configModule.INFRASTRUCTURE_CONFIG;
 } catch (error) {
-  console.warn('Infrastructure config not available:', error.message);
+  console.warn('Infrastructure config not available:', error instanceof Error ? error.message : String(error));
   // Fallback config
   INFRASTRUCTURE_CONFIG = {
     security: {
@@ -448,6 +448,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<APIRespon
             topic: project.topic,
             tone: project.tone,
             format: project.format,
+            competitorUrls: Array.isArray(project.competitor_urls) ? project.competitor_urls : [],
             industry: 'general', // Could be extracted from topic analysis in the future
             targetAudience: 'general', // Could be extracted from topic analysis in the future
             brandDocumentPath,
@@ -470,7 +471,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<APIRespon
     }
 
     // Convert database row to Project type safely
-    const typedProject = transformDatabaseRowToProject(project);
+    const typedProject = transformDatabaseRowToProject(project as any);
     console.log('Project created successfully:', typedProject.id);
 
     // Return immediate success response with enhanced metadata
@@ -560,7 +561,7 @@ export async function GET(request: NextRequest): Promise<NextResponse<APIRespons
 
     // Apply filters
     if (status) {
-      query = query.eq('status', status);
+      query = query.eq('status', status as any);
     }
 
     if (tone) {

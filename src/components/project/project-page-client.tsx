@@ -97,12 +97,18 @@ export function ProjectPageClient({ project: initialProject }: ProjectPageClient
 
       console.log('Research API response status:', response.status);
 
-      const result = await response.json();
-      console.log('Research API result:', result);
+      let result: any = {};
+      try {
+        result = await response.json();
+      } catch {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      console.log('Research API result:', JSON.stringify(result));
 
       if (!response.ok || !result.success) {
-        console.error('Research API error:', result);
-        throw new Error(result.error?.message || `HTTP ${response.status}: ${response.statusText}`);
+        console.error('Research API error:', JSON.stringify(result));
+        const errMsg = result?.error?.message || result?.message || `HTTP ${response.status}: ${response.statusText}`;
+        throw new Error(errMsg);
       }
 
       // Update project status
@@ -400,6 +406,16 @@ export function ProjectPageClient({ project: initialProject }: ProjectPageClient
             <CardContent className="text-center max-w-md">
               <Target className="h-16 w-16 mx-auto mb-6 text-yellow-500 animate-pulse" />
               <CardTitle className="mb-4 text-xl">Creating Content Blueprint</CardTitle>
+
+              <div className="mb-6">
+                <ProjectStatusMonitor
+                  projectId={project.id}
+                  onStatusChange={(status) => {
+                    setProject(prev => ({ ...prev, status: status.status as any }));
+                  }}
+                />
+              </div>
+
               <p className="text-muted-foreground mb-6 leading-relaxed">
                 Based on the research, we're creating a detailed content blueprint
                 with sections, key points, and writing strategy.
@@ -463,7 +479,7 @@ export function ProjectPageClient({ project: initialProject }: ProjectPageClient
               </div>
             </CardContent>
           </Card>
-        ) : project.status === 'stuck' ? (
+        ) : (project.status as string) === 'stuck' ? (
           <Card className="h-full flex items-center justify-center">
             <CardContent className="text-center max-w-md">
               <Clock className="h-16 w-16 mx-auto mb-6 text-amber-500 animate-pulse" />
@@ -487,6 +503,25 @@ export function ProjectPageClient({ project: initialProject }: ProjectPageClient
                     Your request will resume automatically in ~60 seconds.
                   </p>
                 </div>
+
+                <Button
+                  size="lg"
+                  className="w-full"
+                  onClick={retryProcessing}
+                  disabled={isStartingResearch}
+                >
+                  {isStartingResearch ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Retrying...
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="mr-2 h-4 w-4" />
+                      Retry Research
+                    </>
+                  )}
+                </Button>
 
                 <p className="text-xs text-muted-foreground">
                   This is normal and your project will continue processing automatically.

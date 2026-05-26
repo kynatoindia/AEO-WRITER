@@ -125,7 +125,7 @@ export async function updateUserCredits(
   
   // Update database using the stored functions
   if (tokensUsed > 0) {
-    const { error: tokenError } = await supabase.rpc('increment_tokens', { 
+    const { error: tokenError } = await (supabase.rpc as any)('increment_tokens', { 
       user_id: userId, 
       increment: tokensUsed 
     });
@@ -137,7 +137,7 @@ export async function updateUserCredits(
   }
   
   if (projectIncrement > 0) {
-    const { error: projectError } = await supabase.rpc('increment_projects', { 
+    const { error: projectError } = await (supabase.rpc as any)('increment_projects', { 
       user_id: userId, 
       increment: projectIncrement 
     });

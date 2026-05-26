@@ -1,15 +1,18 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState, type SVGProps } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Loader2, AlertTriangle, CheckCircle, Clock, Zap, Activity, Terminal, Cpu, Globe } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export type ProjectStatus =
+  | 'draft'
   | 'created'
   | 'initializing'
   | 'researching'
+  | 'planning'
+  | 'writing'
   | 'generating_blueprint'
   | 'generating_content'
   | 'finalizing'
@@ -40,7 +43,7 @@ export function ProjectStatusMonitor({
 }: ProjectStatusMonitorProps) {
   const [status, setStatus] = useState<StatusUpdate | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
     let mounted = true;
@@ -86,6 +89,8 @@ export function ProjectStatusMonitor({
 
     fetchStatus();
 
+    const pollingInterval = setInterval(fetchStatus, 5000);
+
     const subscription = supabase
       .channel(`project-status-${projectId}`)
       .on(
@@ -115,6 +120,7 @@ export function ProjectStatusMonitor({
 
     return () => {
       mounted = false;
+      clearInterval(pollingInterval);
       subscription.unsubscribe();
     };
   }, [projectId, onStatusChange, supabase]);
@@ -191,6 +197,16 @@ function ProjectStatusDisplay({ status }: { status: StatusUpdate }) {
           label: 'Agent Researching',
           agentIcon: Globe
         };
+      case 'planning':
+        return {
+          icon: Zap,
+          color: 'text-yellow-400',
+          borderColor: 'border-yellow-500/20',
+          glowColor: 'bg-yellow-500/10',
+          label: 'Building Blueprint',
+          agentIcon: Zap
+        };
+      case 'writing':
       case 'generating_content':
         return {
           icon: Terminal,
@@ -314,7 +330,7 @@ function ProjectStatusDisplay({ status }: { status: StatusUpdate }) {
 }
 
 // Helper icons for the display
-function PenTool(props: any) {
+function PenTool(props: SVGProps<SVGSVGElement>) {
   return (
     <svg
       {...props}

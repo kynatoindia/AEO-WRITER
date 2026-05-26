@@ -58,7 +58,7 @@ export class FileSecurityService {
 
     try {
       // 1. Basic file metadata validation
-      const metadataValidation = this.validateFileMetadata(file, allowedTypes, maxSize);
+      const metadataValidation = this.validateFileMetadata(file, allowedTypes as string[], maxSize);
       if (!metadataValidation.isValid) {
         return {
           ...result,

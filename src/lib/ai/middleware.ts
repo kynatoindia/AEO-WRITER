@@ -217,7 +217,7 @@ export function estimateOperationCost(
     'gemini-1.5-flash': 0.00035,
   };
   
-  const costPerToken = modelConfig[config.preferredModel];
+  const costPerToken = modelConfig[config.preferredModel as keyof typeof modelConfig] ?? 0.001;
   const estimatedCost = (totalTokens / 1000) * costPerToken;
   
   return {
@@ -256,7 +256,7 @@ export async function getUsageAnalytics(timeframe: 'day' | 'week' | 'month' = 'w
       let userCost = 0;
       let userTokens = 0;
       
-      for (const [key, value] of Object.entries(monthlyData)) {
+      for (const [key, value] of Object.entries(monthlyData ?? {})) {
         if (key.endsWith('_tokens')) {
           const model = key.replace('_tokens', '') as AIModel;
           const tokens = Number(value);

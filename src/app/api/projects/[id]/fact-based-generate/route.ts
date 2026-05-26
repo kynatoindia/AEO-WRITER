@@ -206,7 +206,7 @@ export async function GET(
     
     // Aggregate fact usage metrics
     const factMetrics = sections?.reduce((acc, section) => {
-      const metadata = section.fact_metadata as any;
+      const metadata = (section as any).fact_metadata;
       if (metadata) {
         acc.totalFactsUsed += metadata.factCount || 0;
         acc.totalConfidence += (metadata.averageConfidence || 0) * (metadata.factCount || 0);
@@ -219,8 +219,8 @@ export async function GET(
       categoriesUsed: [] as string[]
     });
     
-    const averageConfidence = factMetrics?.totalFactsUsed > 0 
-      ? Math.round(factMetrics.totalConfidence / factMetrics.totalFactsUsed)
+    const averageConfidence = (factMetrics?.totalFactsUsed ?? 0) > 0
+      ? Math.round((factMetrics!.totalConfidence) / factMetrics!.totalFactsUsed)
       : 0;
     
     const uniqueCategories = [...new Set(factMetrics?.categoriesUsed || [])];
@@ -237,9 +237,9 @@ export async function GET(
         isComplete: project.status === 'completed'
       },
       blueprint: project.blueprint ? {
-        sectionsCount: project.blueprint.sections?.length || 0,
-        estimatedLength: project.blueprint.estimatedLength || 0,
-        targetKeywords: project.blueprint.targetKeywords || []
+        sectionsCount: (project.blueprint as any).sections?.length || 0,
+        estimatedLength: (project.blueprint as any).estimatedLength || 0,
+        targetKeywords: (project.blueprint as any).targetKeywords || []
       } : null,
       factUsageMetrics: {
         totalFactsUsed: factMetrics?.totalFactsUsed || 0,
@@ -253,10 +253,10 @@ export async function GET(
         status: section.status,
         order: section.section_order,
         wordCount: section.generated_content ? section.generated_content.split(' ').length : 0,
-        factMetadata: section.fact_metadata ? {
-          factCount: section.fact_metadata.factCount,
-          averageConfidence: section.fact_metadata.averageConfidence,
-          categories: section.fact_metadata.categories
+        factMetadata: (section as any).fact_metadata ? {
+          factCount: (section as any).fact_metadata.factCount,
+          averageConfidence: (section as any).fact_metadata.averageConfidence,
+          categories: (section as any).fact_metadata.categories
         } : null
       })) || [],
       generatedContent: project.generated_content ? {

@@ -253,41 +253,41 @@ export function ProjectCreationForm({ onSuccess, onCancel }: ProjectCreationForm
               placeholder="e.g., Best project management tools for remote teams"
               value={formData.topic}
               onChange={(e) => setFormData(prev => ({ ...prev, topic: e.target.value }))}
-              className={errors.topic ? 'border-red-500' : ''}
+              className={errors.topic ? 'border-destructive' : ''}
               rows={3}
             />
             {errors.topic && (
-              <p className="text-sm text-red-500">{errors.topic}</p>
+              <p className="text-sm text-destructive">{errors.topic}</p>
             )}
           </div>
 
           {/* AI Competitor Discovery Info */}
           <div className="space-y-2">
-            <Label>🤖 AI Competitor Discovery</Label>
-            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <Label>AI Competitor Discovery</Label>
+            <div className="p-4 rounded-xl border border-primary/20 bg-primary/5">
               <div className="flex items-start gap-3">
-                <div className="flex-shrink-0 w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                  <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="flex-shrink-0 w-8 h-8 bg-primary/15 rounded-full flex items-center justify-center border border-primary/20">
+                  <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
                 </div>
                 <div className="flex-1">
-                  <h4 className="text-sm font-medium text-blue-900 mb-1">Strategic Intelligence Loop</h4>
-                  <p className="text-sm text-blue-700 mb-2">
+                  <h4 className="text-sm font-semibold text-foreground mb-1">Strategic Intelligence Loop</h4>
+                  <p className="text-sm text-muted-foreground mb-2">
                     Our AI acts as your Market Analyst, automatically discovering and analyzing top-ranking competitors for your topic.
                   </p>
-                  <div className="space-y-1 text-xs text-blue-600">
+                  <div className="space-y-1 text-xs text-muted-foreground">
                     <div className="flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 bg-blue-400 rounded-full"></span>
-                      <span><strong>Scout Phase:</strong> Discovers real ranking leaders using advanced search queries</span>
+                      <span className="w-1.5 h-1.5 bg-primary rounded-full flex-shrink-0"></span>
+                      <span><strong className="text-foreground/80">Scout Phase:</strong> Discovers real ranking leaders using advanced search queries</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 bg-blue-400 rounded-full"></span>
-                      <span><strong>Infiltrator Phase:</strong> Extracts every fact, data point, and semantic keyword</span>
+                      <span className="w-1.5 h-1.5 bg-primary rounded-full flex-shrink-0"></span>
+                      <span><strong className="text-foreground/80">Infiltrator Phase:</strong> Extracts every fact, data point, and semantic keyword</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 bg-blue-400 rounded-full"></span>
-                      <span><strong>Architect Phase:</strong> Identifies content gaps and builds superior authority</span>
+                      <span className="w-1.5 h-1.5 bg-primary rounded-full flex-shrink-0"></span>
+                      <span><strong className="text-foreground/80">Architect Phase:</strong> Identifies content gaps and builds superior authority</span>
                     </div>
                   </div>
                 </div>
@@ -302,7 +302,7 @@ export function ProjectCreationForm({ onSuccess, onCancel }: ProjectCreationForm
               value={formData.tone}
               onValueChange={(value: ContentTone) => setFormData(prev => ({ ...prev, tone: value }))}
             >
-              <SelectTrigger className={errors.tone ? 'border-red-500' : ''}>
+              <SelectTrigger className={errors.tone ? 'border-destructive' : ''}>
                 <SelectValue placeholder="Select content tone" />
               </SelectTrigger>
               <SelectContent>
@@ -312,7 +312,7 @@ export function ProjectCreationForm({ onSuccess, onCancel }: ProjectCreationForm
               </SelectContent>
             </Select>
             {errors.tone && (
-              <p className="text-sm text-red-500">{errors.tone}</p>
+              <p className="text-sm text-destructive">{errors.tone}</p>
             )}
           </div>
 
@@ -323,7 +323,7 @@ export function ProjectCreationForm({ onSuccess, onCancel }: ProjectCreationForm
               value={formData.format}
               onValueChange={(value: ContentFormat) => setFormData(prev => ({ ...prev, format: value }))}
             >
-              <SelectTrigger className={errors.format ? 'border-red-500' : ''}>
+              <SelectTrigger className={errors.format ? 'border-destructive' : ''}>
                 <SelectValue placeholder="Select content format" />
               </SelectTrigger>
               <SelectContent>
@@ -333,19 +333,19 @@ export function ProjectCreationForm({ onSuccess, onCancel }: ProjectCreationForm
               </SelectContent>
             </Select>
             {errors.format && (
-              <p className="text-sm text-red-500">{errors.format}</p>
+              <p className="text-sm text-destructive">{errors.format}</p>
             )}
           </div>
 
           {/* Brand Document Upload */}
           <div className="space-y-2">
             <Label>Brand Document (Optional)</Label>
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-4">
+            <div className="border-2 border-dashed border-border rounded-xl p-4 hover:border-primary/40 transition-colors duration-300">
               {formData.brandDocument ? (
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <Upload className="h-4 w-4 text-green-500" />
-                    <span className="text-sm">{formData.brandDocument.name}</span>
+                    <Upload className="h-4 w-4 text-green-400" />
+                    <span className="text-sm text-foreground">{formData.brandDocument.name}</span>
                     <Badge variant="secondary">
                       {(formData.brandDocument.size / 1024 / 1024).toFixed(2)} MB
                     </Badge>
@@ -361,8 +361,8 @@ export function ProjectCreationForm({ onSuccess, onCancel }: ProjectCreationForm
                 </div>
               ) : (
                 <div className="text-center">
-                  <Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                  <p className="text-sm text-gray-600 mb-2">
+                  <Upload className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground mb-2">
                     Upload a PDF with your brand guidelines, tone of voice, or reference materials
                   </p>
                   <Input
@@ -374,16 +374,16 @@ export function ProjectCreationForm({ onSuccess, onCancel }: ProjectCreationForm
                   />
                   <Label
                     htmlFor="file-upload"
-                    className="cursor-pointer inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+                    className="cursor-pointer inline-flex items-center px-4 py-2 border border-border rounded-xl text-sm font-medium text-foreground bg-white/5 hover:bg-white/10 transition-colors duration-300"
                   >
                     Choose PDF File
                   </Label>
-                  <p className="text-xs text-gray-500 mt-1">Max 10MB</p>
+                  <p className="text-xs text-muted-foreground mt-2">Max 10MB</p>
                 </div>
               )}
             </div>
             {errors.brandDocument && (
-              <p className="text-sm text-red-500">{errors.brandDocument}</p>
+              <p className="text-sm text-destructive">{errors.brandDocument}</p>
             )}
           </div>
 

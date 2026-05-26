@@ -1,17 +1,26 @@
-import { openai } from '@ai-sdk/openai';
-import { google } from '@ai-sdk/google';
-import { generateText, streamText, generateObject, streamObject } from 'ai';
+import { createOpenAI } from '@ai-sdk/openai';
+import { generateText, streamText, generateObject, streamObject, StreamTextResult, ToolSet } from 'ai';
 import { redis, CACHE_KEYS, CACHE_TTL } from '@/lib/redis/client';
 import { z } from 'zod';
-import { NonRetriableError } from 'inngest';
+
+const openRouterProvider = createOpenAI({
+  name: 'openrouter',
+  baseURL: 'https://openrouter.ai/api/v1',
+  apiKey: process.env.OPENROUTER_API_KEY,
+  headers: {
+    'HTTP-Referer': process.env.OPENROUTER_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+    'X-Title': 'AEO Writer SaaS',
+  },
+});
 
 // AI Provider configuration with cost optimization
-export type AIProvider = 'openai' | 'google';
-export type AIModel = 'gpt-4o' | 'gpt-4o-mini' | 'gemini-2.5-pro' | 'gemini-2.0-flash' | 'gemini-3-flash-preview';
+export type AIProvider = 'openrouter';
+export type AIModel = string;
+export type AIUseCase = 'research' | 'blueprint' | 'content' | 'polish' | 'structured';
 
 export interface AIConfig {
   provider: AIProvider;
-  model: AIModel;
+  model: string;
   maxTokens?: number;
   temperature?: number;
   costPerToken?: number; // Cost per 1K tokens in USD
@@ -19,66 +28,92 @@ export interface AIConfig {
   enabled?: boolean; // Provider availability toggle
 }
 
-// Enhanced model configurations with latest pricing and capabilities
-export const AI_MODELS: Record<AIModel, AIConfig> = {
-  // OpenAI models - DISABLED
-  'gpt-4o': {
-    provider: 'openai',
-    model: 'gpt-4o',
-    maxTokens: 4000,
-    temperature: 0.7,
-    costPerToken: 0.015, // $15 per 1M tokens (input)
-    priority: 10, // Low priority
-    enabled: false, // DISABLED
-  },
-  'gpt-4o-mini': {
-    provider: 'openai',
-    model: 'gpt-4o-mini',
-    maxTokens: 2000,
-    temperature: 0.7,
-    costPerToken: 0.00015, // $0.15 per 1M tokens (input)
-    priority: 10, // Low priority
-    enabled: false, // DISABLED
-  },
-  
-  // Google models - PRIMARY PROVIDERS
-  'gemini-2.5-pro': {
-    provider: 'google',
-    model: 'gemini-2.5-pro',
-    maxTokens: 4000,
-    temperature: 0.7,
-    costPerToken: 0.0035, // $3.50 per 1M tokens
-    priority: 2, // MEDIUM PRIORITY
-    enabled: !!(process.env.GOOGLE_AI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY),
-  },
-  'gemini-2.0-flash': {
-    provider: 'google',
-    model: 'gemini-2.0-flash',
-    maxTokens: 2000,
-    temperature: 0.7,
-    costPerToken: 0.00035, // $0.35 per 1M tokens
-    priority: 3, // LOWER PRIORITY
-    enabled: !!(process.env.GOOGLE_AI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY),
-  },
-  'gemini-3-flash-preview': {
-    provider: 'google',
-    model: 'gemini-3-flash-preview',
-    maxTokens: 8000,
-    temperature: 0.7,
-    costPerToken: 0.0002, // Estimated cost for new model
-    priority: 1, // HIGHEST PRIORITY - Latest model
-    enabled: !!(process.env.GOOGLE_AI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY),
-  },
+function parseModelList(value?: string): string[] {
+  if (!value) return [];
+  return value
+    .split(',')
+    .map(model => model.trim())
+    .filter(Boolean);
+}
+
+const OPENROUTER_MODEL_CANDIDATES: AIModel[] = Array.from(new Set([
+  ...parseModelList(process.env.OPENROUTER_MODEL),
+  ...parseModelList(process.env.OPENROUTER_FALLBACK_MODELS),
+  'openrouter/auto',
+  'openai/gpt-4o-mini',
+  'meta-llama/llama-3.1-8b-instruct',
+]));
+
+const OPENROUTER_MODELS_ENABLED = !!process.env.OPENROUTER_API_KEY;
+
+// Main AI model configuration (OpenRouter, ordered by priority)
+export const AI_MODELS: Record<AIModel, AIConfig> = Object.fromEntries(
+  OPENROUTER_MODEL_CANDIDATES.map((model, index) => [
+    model,
+    {
+      provider: 'openrouter' as const,
+      model,
+      maxTokens: 8000,
+      temperature: 0.7,
+      costPerToken: 0.00005,
+      priority: index + 1,
+      enabled: OPENROUTER_MODELS_ENABLED,
+    },
+  ])
+) as Record<AIModel, AIConfig>;
+
+// Use case specific model selection
+export const USE_CASE_MODELS: Record<AIUseCase, AIModel[]> = {
+  research: [...OPENROUTER_MODEL_CANDIDATES],
+  blueprint: [...OPENROUTER_MODEL_CANDIDATES],
+  content: [...OPENROUTER_MODEL_CANDIDATES],
+  polish: [...OPENROUTER_MODEL_CANDIDATES],
+  structured: [...OPENROUTER_MODEL_CANDIDATES],
 };
 
-// Use case specific model selection with fallbacks - ALL GEMINI
-export const USE_CASE_MODELS = {
-  research: ['gemini-3-flash-preview', 'gemini-2.5-pro', 'gemini-2.0-flash'], // Latest model first
-  blueprint: ['gemini-3-flash-preview', 'gemini-2.5-pro', 'gemini-2.0-flash'], // Latest model first
-  content: ['gemini-3-flash-preview', 'gemini-2.0-flash', 'gemini-2.5-pro'], // Latest model first
-  polish: ['gemini-3-flash-preview', 'gemini-2.0-flash', 'gemini-2.5-pro'], // Latest model first
-  structured: ['gemini-3-flash-preview', 'gemini-2.5-pro', 'gemini-2.0-flash'], // Latest model first
-} as const;
+interface GatewayErrorLike {
+  statusCode?: number;
+  message?: string;
+  responseBody?: string;
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string') {
+      return message;
+    }
+  }
+  return 'Unknown error';
+}
+
+function isRateLimitError(error: unknown): boolean {
+  const candidate = error as GatewayErrorLike;
+  const errorText = `${candidate?.message || ''} ${candidate?.responseBody || ''}`.toLowerCase();
+  return candidate?.statusCode === 429 || errorText.includes('rate limit') || errorText.includes('quota');
+}
+
+function isModelUnavailableError(error: unknown): boolean {
+  const candidate = error as GatewayErrorLike;
+  const errorText = `${candidate?.message || ''} ${candidate?.responseBody || ''}`.toLowerCase();
+
+  return (
+    candidate?.statusCode === 404 ||
+    errorText.includes('no endpoints found') ||
+    errorText.includes('model not found') ||
+    errorText.includes('unsupported model') ||
+    errorText.includes('no such model')
+  );
+}
+
+function getEnabledProviders(): AIProvider[] {
+  return Object.values(AI_MODELS)
+    .filter(config => config.enabled)
+    .map(config => config.provider)
+    .filter((provider, index, arr) => arr.indexOf(provider) === index);
+}
 
 // Provider health tracking with enhanced metrics
 interface ProviderHealth {
@@ -107,7 +142,7 @@ interface TokenUsage {
 
 // Streaming response wrapper
 interface StreamingResponse {
-  stream: any;
+  stream: StreamTextResult<ToolSet, never>;
   model: AIModel;
   provider: AIProvider;
   onFinish?: (usage: TokenUsage) => void;
@@ -122,17 +157,8 @@ class AIProviderManager {
   
   constructor() {
     // Initialize provider health with enhanced metrics
-    this.providerHealth.set('openai', {
-      healthy: true,
-      lastCheck: Date.now(),
-      errorCount: 0,
-      avgResponseTime: 0,
-      successRate: 1.0,
-      totalRequests: 0,
-    });
-    
-    this.providerHealth.set('google', {
-      healthy: !!(process.env.GOOGLE_AI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY),
+    this.providerHealth.set('openrouter', {
+      healthy: !!process.env.OPENROUTER_API_KEY,
       lastCheck: Date.now(),
       errorCount: 0,
       avgResponseTime: 0,
@@ -152,31 +178,43 @@ class AIProviderManager {
   
   private async checkProviderHealth() {
     for (const [provider, health] of this.providerHealth.entries()) {
-      // Skip disabled providers
-      const enabledModels = Object.entries(AI_MODELS)
-        .filter(([_, config]) => config.provider === provider && config.enabled);
-      
+      const enabledModels = this.getEnabledModelsForProvider(provider);
+
       if (enabledModels.length === 0) {
         continue;
       }
-      
-      try {
-        const start = Date.now();
-        
-        // Simple health check with minimal cost
-        const testPrompt = "Respond with 'OK'";
-        const config = provider === 'openai' 
-          ? AI_MODELS['gpt-4o-mini'] 
-          : AI_MODELS['gemini-3-flash-preview']; // Use the new model
-        
-        if (!config.enabled) continue;
-        
-        await this.generateWithProvider(testPrompt, config);
-        
-        const responseTime = Date.now() - start;
+
+      // Simple health check with minimal cost
+      const testPrompt = "Respond with 'OK'";
+      let healthCheckPassed = false;
+      let responseTime = 0;
+      let lastError: unknown;
+
+      for (const [model, config] of enabledModels) {
+        try {
+          const start = Date.now();
+          await this.generateWithProvider(testPrompt, config);
+          responseTime = Date.now() - start;
+          healthCheckPassed = true;
+          break;
+        } catch (error) {
+          lastError = error;
+
+          if (isModelUnavailableError(error)) {
+            this.disableModel(model, getErrorMessage(error));
+            continue;
+          }
+
+          if (isRateLimitError(error)) {
+            break;
+          }
+        }
+      }
+
+      if (healthCheckPassed) {
         const newTotalRequests = health.totalRequests + 1;
         const newSuccessRate = (health.successRate * health.totalRequests + 1) / newTotalRequests;
-        
+
         // Update health status with success
         this.providerHealth.set(provider, {
           healthy: true,
@@ -187,52 +225,50 @@ class AIProviderManager {
           totalRequests: newTotalRequests,
           rateLimitHit: false,
         });
-        
+
         // Cache health status
         await redis.setex(
           CACHE_KEYS.AI_PROVIDER_STATUS(provider),
           CACHE_TTL.AI_PROVIDER_STATUS,
-          { 
-            healthy: true, 
-            responseTime, 
+          {
+            healthy: true,
+            responseTime,
             successRate: newSuccessRate,
-            lastCheck: Date.now() 
+            lastCheck: Date.now()
           }
         );
-        
-      } catch (error) {
-        const isRateLimit = error instanceof Error && 
-          (error.message.includes('rate limit') || error.message.includes('429'));
-        
-        const newTotalRequests = health.totalRequests + 1;
-        const newSuccessRate = (health.successRate * health.totalRequests) / newTotalRequests;
-        
-        const updatedHealth: ProviderHealth = {
-          healthy: health.errorCount < 2, // Mark unhealthy after 3 consecutive errors
-          lastCheck: Date.now(),
-          errorCount: health.errorCount + 1,
-          avgResponseTime: health.avgResponseTime,
-          successRate: newSuccessRate,
-          totalRequests: newTotalRequests,
-          lastError: error instanceof Error ? error.message : 'Unknown error',
-          rateLimitHit: isRateLimit,
-          rateLimitResetTime: isRateLimit ? Date.now() + 60000 : undefined, // 1 minute reset
-        };
-        
-        this.providerHealth.set(provider, updatedHealth);
-        
-        // Cache unhealthy status
-        await redis.setex(
-          CACHE_KEYS.AI_PROVIDER_STATUS(provider),
-          CACHE_TTL.AI_PROVIDER_STATUS,
-          { 
-            healthy: false, 
-            error: updatedHealth.lastError, 
-            rateLimitHit: isRateLimit,
-            lastCheck: Date.now() 
-          }
-        );
+        continue;
       }
+
+      const isRateLimit = isRateLimitError(lastError);
+      const newTotalRequests = health.totalRequests + 1;
+      const newSuccessRate = (health.successRate * health.totalRequests) / newTotalRequests;
+
+      const updatedHealth: ProviderHealth = {
+        healthy: health.errorCount < 2, // Mark unhealthy after 3 consecutive errors
+        lastCheck: Date.now(),
+        errorCount: health.errorCount + 1,
+        avgResponseTime: health.avgResponseTime,
+        successRate: newSuccessRate,
+        totalRequests: newTotalRequests,
+        lastError: getErrorMessage(lastError),
+        rateLimitHit: isRateLimit,
+        rateLimitResetTime: isRateLimit ? Date.now() + 60000 : undefined, // 1 minute reset
+      };
+
+      this.providerHealth.set(provider, updatedHealth);
+
+      // Cache unhealthy status
+      await redis.setex(
+        CACHE_KEYS.AI_PROVIDER_STATUS(provider),
+        CACHE_TTL.AI_PROVIDER_STATUS,
+        {
+          healthy: false,
+          error: updatedHealth.lastError,
+          rateLimitHit: isRateLimit,
+          lastCheck: Date.now()
+        }
+      );
     }
   }
   
@@ -251,21 +287,46 @@ class AIProviderManager {
       })
       .map(([provider]) => provider);
   }
-  
-  getBestModel(useCase: keyof typeof USE_CASE_MODELS): AIModel {
+
+  private getEnabledModelsForProvider(provider: AIProvider): Array<[AIModel, AIConfig]> {
+    return Object.entries(AI_MODELS)
+      .filter(([_, config]) => config.provider === provider && config.enabled)
+      .sort(([_, a], [__, b]) => (a.priority || 999) - (b.priority || 999)) as Array<[AIModel, AIConfig]>;
+  }
+
+  private getProvidersForModelSelection(): AIProvider[] {
     const healthyProviders = this.getHealthyProviders();
-    const availableModels = USE_CASE_MODELS[useCase].filter(model => 
-      healthyProviders.includes(AI_MODELS[model].provider) && AI_MODELS[model].enabled
+    if (healthyProviders.length > 0) {
+      return healthyProviders;
+    }
+
+    return getEnabledProviders();
+  }
+
+  disableModel(model: AIModel, reason: string): void {
+    const currentConfig = AI_MODELS[model];
+    if (!currentConfig?.enabled) {
+      return;
+    }
+
+    currentConfig.enabled = false;
+    console.warn(`[AI Gateway] Disabled model "${model}" due to permanent API error: ${reason}`);
+  }
+  
+  getBestModel(useCase: AIUseCase): AIModel {
+    const candidateProviders = this.getProvidersForModelSelection();
+    const availableModels = USE_CASE_MODELS[useCase].filter(model =>
+      AI_MODELS[model]?.enabled && candidateProviders.includes(AI_MODELS[model].provider)
     );
     
     if (availableModels.length === 0) {
       // Fallback to any available enabled model
-      const fallbackModel = Object.entries(AI_MODELS).find(([model, config]) => 
-        healthyProviders.includes(config.provider) && config.enabled
+      const fallbackModel = Object.entries(AI_MODELS).find(([_, config]) =>
+        candidateProviders.includes(config.provider) && config.enabled
       );
       
       if (!fallbackModel) {
-        throw new Error('No healthy AI providers available');
+        throw new Error('No enabled AI providers available');
       }
       
       return fallbackModel[0] as AIModel;
@@ -315,7 +376,7 @@ class AIProviderManager {
     const result = await generateText({
       model,
       prompt,
-      maxTokens: config.maxTokens,
+      maxOutputTokens: config.maxTokens,
       temperature: config.temperature,
     });
     
@@ -324,10 +385,8 @@ class AIProviderManager {
   
   private getModel(config: AIConfig) {
     switch (config.provider) {
-      case 'openai':
-        return openai(config.model);
-      case 'google':
-        return google(config.model);
+      case 'openrouter':
+        return openRouterProvider(config.model);
       default:
         throw new Error(`Unsupported AI provider: ${config.provider}`);
     }
@@ -337,6 +396,15 @@ class AIProviderManager {
 // Global provider manager instance
 const providerManager = new AIProviderManager();
 
+function getProvidersForRequest(): AIProvider[] {
+  const healthyProviders = providerManager.getHealthyProviders();
+  if (healthyProviders.length > 0) {
+    return healthyProviders;
+  }
+
+  return getEnabledProviders();
+}
+
 // Enhanced cost tracking with detailed analytics
 export async function trackAICost(
   userId: string,
@@ -344,7 +412,7 @@ export async function trackAICost(
   inputTokens: number,
   outputTokens: number,
   operation: string,
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 ): Promise<void> {
   try {
     const config = AI_MODELS[model];
@@ -399,12 +467,11 @@ export async function trackAICost(
 // Enhanced text generation with comprehensive error handling and retries
 export async function generateAIText(
   prompt: string,
-  useCase: keyof typeof USE_CASE_MODELS = 'content',
+  useCase: AIUseCase = 'content',
   userId?: string,
   options?: Partial<AIConfig>
 ): Promise<{ text: string; model: AIModel; inputTokens: number; outputTokens: number; cost: number }> {
   const bestModel = providerManager.getBestModel(useCase);
-  const config = { ...AI_MODELS[bestModel], ...options };
   
   // Check cache first for expensive operations
   if (useCase === 'research' || useCase === 'blueprint') {
@@ -426,10 +493,14 @@ export async function generateAIText(
   }
   
   const errors: Error[] = [];
-  const healthyProviders = providerManager.getHealthyProviders();
+  const providersToTry = getProvidersForRequest();
+
+  if (providersToTry.length === 0) {
+    throw new Error('No enabled AI providers available');
+  }
   
   // Try providers in order of preference with retry logic
-  for (const provider of healthyProviders) {
+  for (const provider of providersToTry) {
     const availableModels = Object.entries(AI_MODELS)
       .filter(([_, modelConfig]) => modelConfig.provider === provider && modelConfig.enabled)
       .sort(([_, a], [__, b]) => a.priority! - b.priority!)
@@ -447,13 +518,13 @@ export async function generateAIText(
           const result = await generateText({
             model: modelInstance,
             prompt,
-            maxTokens: modelConfig.maxTokens,
+            maxOutputTokens: modelConfig.maxTokens,
             temperature: modelConfig.temperature,
           });
           
           const responseTime = Date.now() - start;
-          const inputTokens = result.usage?.promptTokens || 0;
-          const outputTokens = result.usage?.completionTokens || 0;
+          const inputTokens = result.usage?.inputTokens || 0;
+          const outputTokens = result.usage?.outputTokens || 0;
           const totalTokens = result.usage?.totalTokens || inputTokens + outputTokens;
           
           // Calculate cost with input/output differentiation
@@ -491,20 +562,22 @@ export async function generateAIText(
           
           return response;
           
-        } catch (error: any) {
+        } catch (error) {
           const responseTime = Date.now() - start;
           await providerManager.recordUsage(provider, false, responseTime);
+          const errorMessage = getErrorMessage(error);
           
           console.error(`AI provider ${provider} model ${model} attempt ${retryCount + 1} failed:`, error);
-          errors.push(error as Error);
+          errors.push(error instanceof Error ? error : new Error(errorMessage));
           
-          // CIRCUIT BREAKER: Stop retries for 404 errors immediately
-          if (error.statusCode === 404 || error.message.includes("not found")) {
-            throw new NonRetriableError("Permanent API/Model mismatch. Stopping retries.", { cause: error });
+          // Permanent model mismatch -> disable and move to next model
+          if (isModelUnavailableError(error)) {
+            providerManager.disableModel(model, errorMessage);
+            break;
           }
           
           // Check if it's a rate limit error
-          if (error instanceof Error && error.message.includes('rate limit')) {
+          if (isRateLimitError(error)) {
             break; // Don't retry rate limit errors, try next provider
           }
           
@@ -529,17 +602,18 @@ export async function generateAIText(
 // Enhanced streaming with comprehensive error handling and token tracking
 export async function streamAIText(
   prompt: string,
-  useCase: keyof typeof USE_CASE_MODELS = 'content',
+  useCase: AIUseCase = 'content',
   userId?: string,
   options?: Partial<AIConfig>
 ): Promise<StreamingResponse> {
-  const bestModel = providerManager.getBestModel(useCase);
-  const config = { ...AI_MODELS[bestModel], ...options };
-  
   const errors: Error[] = [];
-  const healthyProviders = providerManager.getHealthyProviders();
+  const providersToTry = getProvidersForRequest();
+
+  if (providersToTry.length === 0) {
+    throw new Error('No enabled AI providers available');
+  }
   
-  for (const provider of healthyProviders) {
+  for (const provider of providersToTry) {
     const availableModels = Object.entries(AI_MODELS)
       .filter(([_, modelConfig]) => modelConfig.provider === provider && modelConfig.enabled)
       .sort(([_, a], [__, b]) => a.priority! - b.priority!)
@@ -549,15 +623,15 @@ export async function streamAIText(
       let retryCount = 0;
       
       while (retryCount < providerManager['maxRetries']) {
+        const start = Date.now();
         try {
           const modelConfig = { ...AI_MODELS[model], ...options };
           const modelInstance = providerManager['getModel'](modelConfig);
           
-          const start = Date.now();
           const stream = await streamText({
             model: modelInstance,
             prompt,
-            maxTokens: modelConfig.maxTokens,
+            maxOutputTokens: modelConfig.maxTokens,
             temperature: modelConfig.temperature,
           });
           
@@ -592,11 +666,11 @@ export async function streamAIText(
           const originalStream = stream;
           const enhancedStream = {
             ...originalStream,
-            usage: originalStream.usage.then(async (usage) => {
+            usage: Promise.resolve(originalStream.usage).then(async (usage) => {
               if (usage && streamingResponse.onFinish) {
                 await streamingResponse.onFinish({
-                  inputTokens: usage.promptTokens || 0,
-                  outputTokens: usage.completionTokens || 0,
+                  inputTokens: usage.inputTokens || 0,
+                  outputTokens: usage.outputTokens || 0,
                   totalTokens: usage.totalTokens || 0,
                   cost: 0, // Will be calculated in onFinish
                   model,
@@ -616,18 +690,24 @@ export async function streamAIText(
           
           return {
             ...streamingResponse,
-            stream: enhancedStream
+            stream: enhancedStream as unknown as StreamTextResult<ToolSet, never>
           };
           
         } catch (error) {
           const responseTime = Date.now() - start;
           await providerManager.recordUsage(provider, false, responseTime);
+          const errorMessage = getErrorMessage(error);
           
           console.error(`AI provider ${provider} model ${model} streaming attempt ${retryCount + 1} failed:`, error);
-          errors.push(error as Error);
+          errors.push(error instanceof Error ? error : new Error(errorMessage));
+
+          if (isModelUnavailableError(error)) {
+            providerManager.disableModel(model, errorMessage);
+            break;
+          }
           
           // Check if it's a rate limit error
-          if (error instanceof Error && error.message.includes('rate limit')) {
+          if (isRateLimitError(error)) {
             break; // Don't retry rate limit errors, try next provider
           }
           
@@ -653,22 +733,18 @@ export async function streamAIText(
 export async function generateStructuredOutput<T>(
   prompt: string,
   schema: z.ZodSchema<T>,
-  useCase: keyof typeof USE_CASE_MODELS = 'structured',
+  useCase: AIUseCase = 'structured',
   userId?: string,
   options?: Partial<AIConfig>
 ): Promise<{ object: T; model: AIModel; inputTokens: number; outputTokens: number; cost: number }> {
-  const bestModel = providerManager.getBestModel(useCase);
-  const config = { ...AI_MODELS[bestModel], ...options };
-  
   const errors: Error[] = [];
-  const healthyProviders = providerManager.getHealthyProviders();
+  const providersToTry = getProvidersForRequest();
   
-  // Prefer OpenAI for structured output (better JSON support)
-  const preferredProviders = healthyProviders.sort((a, b) => {
-    if (a === 'openai' && b !== 'openai') return -1;
-    if (b === 'openai' && a !== 'openai') return 1;
-    return 0;
-  });
+  const preferredProviders = [...providersToTry];
+
+  if (preferredProviders.length === 0) {
+    throw new Error('No enabled AI providers available');
+  }
   
   for (const provider of preferredProviders) {
     const availableModels = Object.entries(AI_MODELS)
@@ -680,22 +756,22 @@ export async function generateStructuredOutput<T>(
       let retryCount = 0;
       
       while (retryCount < providerManager['maxRetries']) {
+        const start = Date.now();
         try {
           const modelConfig = { ...AI_MODELS[model], ...options };
           const modelInstance = providerManager['getModel'](modelConfig);
           
-          const start = Date.now();
           const result = await generateObject({
             model: modelInstance,
             prompt,
             schema,
-            maxTokens: modelConfig.maxTokens,
+            maxOutputTokens: modelConfig.maxTokens,
             temperature: modelConfig.temperature,
           });
           
           const responseTime = Date.now() - start;
-          const inputTokens = result.usage?.promptTokens || 0;
-          const outputTokens = result.usage?.completionTokens || 0;
+          const inputTokens = result.usage?.inputTokens || 0;
+          const outputTokens = result.usage?.outputTokens || 0;
           
           // Calculate cost
           const inputCost = (inputTokens / 1000) * modelConfig.costPerToken!;
@@ -727,12 +803,18 @@ export async function generateStructuredOutput<T>(
         } catch (error) {
           const responseTime = Date.now() - start;
           await providerManager.recordUsage(provider, false, responseTime);
+          const errorMessage = getErrorMessage(error);
           
           console.error(`Structured output ${provider} model ${model} attempt ${retryCount + 1} failed:`, error);
-          errors.push(error as Error);
+          errors.push(error instanceof Error ? error : new Error(errorMessage));
+
+          if (isModelUnavailableError(error)) {
+            providerManager.disableModel(model, errorMessage);
+            break;
+          }
           
           // Check if it's a rate limit error
-          if (error instanceof Error && error.message.includes('rate limit')) {
+          if (isRateLimitError(error)) {
             break;
           }
           
@@ -757,20 +839,20 @@ export async function generateStructuredOutput<T>(
 export async function streamStructuredOutput<T>(
   prompt: string,
   schema: z.ZodSchema<T>,
-  useCase: keyof typeof USE_CASE_MODELS = 'structured',
+  useCase: AIUseCase = 'structured',
   userId?: string,
   options?: Partial<AIConfig>
 ) {
-  const bestModel = providerManager.getBestModel(useCase);
-  const config = { ...AI_MODELS[bestModel], ...options };
-  
   const errors: Error[] = [];
-  const healthyProviders = providerManager.getHealthyProviders();
+  const providersToTry = getProvidersForRequest();
   
-  // Only OpenAI supports streaming structured output currently
-  const openaiProviders = healthyProviders.filter(p => p === 'openai');
+  const openrouterProviders = providersToTry.filter(p => p === 'openrouter');
+
+  if (openrouterProviders.length === 0) {
+    throw new Error('No enabled AI providers available for streaming structured output');
+  }
   
-  for (const provider of openaiProviders) {
+  for (const provider of openrouterProviders) {
     const availableModels = Object.entries(AI_MODELS)
       .filter(([_, modelConfig]) => modelConfig.provider === provider && modelConfig.enabled)
       .sort(([_, a], [__, b]) => a.priority! - b.priority!)
@@ -800,8 +882,8 @@ export async function streamStructuredOutput<T>(
               await trackAICost(
                 userId, 
                 model, 
-                usage.promptTokens || 0, 
-                usage.completionTokens || 0, 
+                usage.inputTokens || 0, 
+                usage.outputTokens || 0, 
                 useCase,
                 { responseTime, streaming: true, structured: true }
               );
@@ -816,8 +898,13 @@ export async function streamStructuredOutput<T>(
         return stream;
         
       } catch (error) {
+        const errorMessage = getErrorMessage(error);
         console.error(`Streaming structured output ${provider} model ${model} failed:`, error);
-        errors.push(error as Error);
+        errors.push(error instanceof Error ? error : new Error(errorMessage));
+
+        if (isModelUnavailableError(error)) {
+          providerManager.disableModel(model, errorMessage);
+        }
         continue;
       }
     }
@@ -845,8 +932,8 @@ export async function getUserAIUsage(userId: string): Promise<{
     const monthlyKey = `${CACHE_KEYS.AI_COST_TRACKING(userId)}:monthly`;
     
     // Get daily data for the last 30 days
-    const dailyPromises = [];
-    const dates = [];
+    const dailyPromises: Promise<any>[] = [];
+    const dates: string[] = [];
     for (let i = 0; i < 30; i++) {
       const date = new Date();
       date.setDate(date.getDate() - i);
@@ -906,7 +993,7 @@ export async function getUserAIUsage(userId: string): Promise<{
     const monthlyTokens: Record<AIModel, number> = {};
     let totalCost = 0;
     
-    for (const [key, value] of Object.entries(monthlyData)) {
+    for (const [key, value] of Object.entries(monthlyData ?? {})) {
       if (key.endsWith('_tokens')) {
         const model = key.replace('_tokens', '') as AIModel;
         monthlyTokens[model] = Number(value);
@@ -969,8 +1056,8 @@ export async function getSystemAIUsage(): Promise<{
     const providerStats = providerManager.getProviderStats();
     
     // Get last 7 days of system usage
-    const dailyPromises = [];
-    const dates = [];
+    const dailyPromises: Promise<any>[] = [];
+    const dates: string[] = [];
     for (let i = 0; i < 7; i++) {
       const date = new Date();
       date.setDate(date.getDate() - i);
@@ -993,7 +1080,7 @@ export async function getSystemAIUsage(): Promise<{
       let dayCost = 0;
       let dayRequests = 0;
       
-      for (const [model, cost] of Object.entries(dailyData)) {
+      for (const [model, cost] of Object.entries(dailyData ?? {})) {
         const modelCost = Number(cost);
         dayCost += modelCost;
         totalCost += modelCost;

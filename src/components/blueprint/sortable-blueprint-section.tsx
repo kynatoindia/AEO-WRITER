@@ -157,13 +157,13 @@ export function SortableBlueprintSection({
           <div
             {...attributes}
             {...listeners}
-            className="flex items-center justify-center w-6 h-6 text-gray-400 hover:text-gray-600 cursor-grab active:cursor-grabbing mt-1"
+            className="flex items-center justify-center w-6 h-6 text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing mt-1"
           >
             <GripVertical className="h-4 w-4" />
           </div>
           
           {/* Section Number */}
-          <div className="flex items-center justify-center w-8 h-8 bg-blue-100 text-blue-700 rounded-full text-sm font-medium flex-shrink-0 mt-0.5">
+          <div className="flex items-center justify-center w-8 h-8 bg-primary/15 text-primary border border-primary/20 rounded-full text-sm font-medium flex-shrink-0 mt-0.5">
             {index + 1}
           </div>
           

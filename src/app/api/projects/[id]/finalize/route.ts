@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createRouteClient } from '@/lib/supabase/server';
 import { inngest } from '@/lib/inngest/client';
 import { checkQuota, incrementUsage } from '@/lib/rate-limiting/quota';
-import { APIError } from '@/lib/constants/errors';
 import { z } from 'zod';
 
 // Request validation schema
@@ -121,7 +120,7 @@ export async function POST(
     }
 
     // Check if currently being finalized
-    if (project.status === 'finalizing') {
+    if ((project.status as string) === 'finalizing') {
       return NextResponse.json(
         {
           success: false,
@@ -189,7 +188,7 @@ export async function POST(
           error: {
             code: 'VALIDATION_ERROR',
             message: 'Invalid request data',
-            details: error.errors
+            details: error.issues
           }
         },
         { status: 400 }
@@ -273,15 +272,16 @@ export async function GET(
 
     // Calculate finalization metrics
     const hasContent = !!project.generated_content;
-    const hasEnhancedSEO = project.seo_metadata &&
-      typeof project.seo_metadata === 'object' &&
-      'faqData' in project.seo_metadata;
+    const seoMeta = project.seo_metadata as any;
+    const hasEnhancedSEO = seoMeta &&
+      typeof seoMeta === 'object' &&
+      'faqData' in seoMeta;
 
     const wordCount = project.generated_content ?
       project.generated_content.split(' ').length : 0;
 
-    const faqCount = hasEnhancedSEO && project.seo_metadata.faqData ?
-      project.seo_metadata.faqData.length : 0;
+    const faqCount = hasEnhancedSEO && seoMeta.faqData ?
+      seoMeta.faqData.length : 0;
 
     return NextResponse.json({
       success: true,
@@ -290,17 +290,15 @@ export async function GET(
         status: project.status,
         hasContent,
         isFinalized: project.status === 'completed',
-        isFinalizationInProgress: project.status === 'finalizing',
-        canFinalize: hasContent && project.status !== 'finalizing',
+        isFinalizationInProgress: (project.status as string) === 'finalizing',
+        canFinalize: hasContent && (project.status as string) !== 'finalizing',
         lastUpdated: project.updated_at,
         metrics: {
           wordCount,
           hasEnhancedSEO,
           faqCount,
-          seoScore: hasEnhancedSEO && project.seo_metadata.seoScore ?
-            project.seo_metadata.seoScore : null,
-          readabilityScore: hasEnhancedSEO && project.seo_metadata.readabilityScore ?
-            project.seo_metadata.readabilityScore : null
+          seoScore: hasEnhancedSEO && seoMeta.seoScore ? seoMeta.seoScore : null,
+          readabilityScore: hasEnhancedSEO && seoMeta.readabilityScore ? seoMeta.readabilityScore : null
         }
       }
     });
