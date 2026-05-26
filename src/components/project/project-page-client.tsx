@@ -384,15 +384,24 @@ export function ProjectPageClient({ project: initialProject }: ProjectPageClient
                   Analyzing {project.competitor_urls.length} competitor URLs...
                 </p>
 
-                {/* Development mode: Show manual progress button */}
+                {/* Development mode: Show manual progress buttons */}
                 {process.env.NODE_ENV === 'development' && (
-                  <div className="mt-6 pt-4 border-t">
+                  <div className="mt-6 pt-4 border-t space-y-2">
                     <p className="text-xs text-muted-foreground mb-2">Development Mode:</p>
                     <Button
                       variant="outline"
                       size="sm"
+                      onClick={startResearch}
+                      disabled={isStartingResearch}
+                      className="text-xs w-full"
+                    >
+                      {isStartingResearch ? 'Restarting...' : '↺ Restart Research (re-send Inngest event)'}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
                       onClick={() => updateProjectStatus('planning')}
-                      className="text-xs"
+                      className="text-xs w-full"
                     >
                       Skip to Planning Phase →
                     </Button>
