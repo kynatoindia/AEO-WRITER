@@ -523,7 +523,7 @@ function LiveWriterContent({ projectId, onComplete, onError }: LiveWriterProps) 
               <div className="mb-6">
                 <div className="w-full bg-surface-2 rounded-full h-3 overflow-hidden">
                   <div
-                    className="h-full bg-gradient-to-r from-primary to-purple-600 rounded-full transition-all duration-500 ease-out relative"
+                    className="h-full bg-primary rounded-full transition-all duration-500 ease-out relative"
                     style={{ width: `${progressPercentage}%` }}
                   >
                     <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer" />

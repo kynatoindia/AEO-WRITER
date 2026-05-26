@@ -62,8 +62,8 @@ export function Footer() {
               className="mb-6"
             >
               <div className="flex items-center gap-3 mb-4">
-                <div className="p-2 rounded-xl bg-gradient-to-br from-primary/20 to-purple-600/10 border border-white/10">
-                  <div className="w-8 h-8 bg-gradient-to-br from-primary to-purple-600 rounded-lg flex items-center justify-center">
+                <div className="p-2 rounded-xl bg-primary/10 border border-primary/20">
+                  <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
                     <Sparkles className="w-4 h-4 text-white" />
                   </div>
                 </div>
@@ -73,8 +73,8 @@ export function Footer() {
                 </div>
               </div>
               <p className="text-sm text-muted-foreground leading-relaxed mb-6">
-                Revolutionizing content creation with advanced agentic AI. 
-                Create SEO-optimized content that dominates search results.
+                Open-source AI agent for Answer Engine Optimization. Research, blueprint,
+                and write long-form content — transparent and self-hostable.
               </p>
               
               {/* Social Links */}
@@ -132,7 +132,7 @@ export function Footer() {
           className="glass-card p-8 rounded-3xl border border-white/5 mb-12 relative overflow-hidden"
         >
           {/* Background Pattern */}
-          <div className="absolute inset-0 bg-gradient-to-r from-primary/5 via-transparent to-purple-600/5 opacity-50" />
+          <div className="absolute inset-0 bg-gradient-to-r from-primary/5 via-transparent to-primary/3 opacity-50" />
           
           <div className="relative z-10 text-center">
             <h3 className="text-2xl font-bold text-gradient mb-2">Stay in the Loop</h3>

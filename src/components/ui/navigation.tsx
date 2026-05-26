@@ -48,8 +48,8 @@ export function Navigation({ user }: NavigationProps) {
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-3 group">
-            <div className="p-2 rounded-xl bg-gradient-to-br from-primary/20 to-purple-600/10 border border-white/10 group-hover:scale-110 transition-transform duration-300">
-              <div className="w-6 h-6 bg-gradient-to-br from-primary to-purple-600 rounded-lg flex items-center justify-center">
+            <div className="p-2 rounded-xl bg-primary/10 border border-primary/20 group-hover:scale-110 transition-transform duration-300">
+              <div className="w-6 h-6 bg-primary rounded-lg flex items-center justify-center">
                 <Sparkles className="w-3 h-3 text-white" />
               </div>
             </div>
@@ -67,7 +67,7 @@ export function Navigation({ user }: NavigationProps) {
                 className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors duration-300 relative group"
               >
                 {item.name}
-                <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-gradient-to-r from-primary to-purple-600 group-hover:w-full transition-all duration-300" />
+                <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-primary group-hover:w-full transition-all duration-300" />
               </Link>
             ))}
           </div>
@@ -79,7 +79,7 @@ export function Navigation({ user }: NavigationProps) {
                 <Button asChild variant="ghost" className="rounded-xl">
                   <Link href="/dashboard">Dashboard</Link>
                 </Button>
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-purple-600 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
                   <span className="text-sm font-semibold text-white">
                     {user.email?.[0]?.toUpperCase() || 'U'}
                   </span>

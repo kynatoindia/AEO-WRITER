@@ -120,17 +120,53 @@ export function StreamingContentDisplay({
     }
   };
   
-  const formatContent = (text: string) => {
-    // Simple markdown-like formatting for display
-    return text
-      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*(.*?)\*/g, '<em>$1</em>')
-      .replace(/^### (.*$)/gm, '<h3 class="text-lg font-semibold mt-4 mb-2">$1</h3>')
-      .replace(/^## (.*$)/gm, '<h2 class="text-xl font-semibold mt-6 mb-3">$1</h2>')
-      .replace(/^# (.*$)/gm, '<h1 class="text-2xl font-bold mt-8 mb-4">$1</h1>')
-      .replace(/^\- (.*$)/gm, '<li class="ml-4">• $1</li>')
-      .replace(/\n\n/g, '</p><p class="mb-4">')
-      .replace(/^(.+)$/gm, '<p class="mb-4">$1</p>');
+  const formatContent = (text: string): string => {
+    const lines = text.split('\n');
+    const result: string[] = [];
+    let inParagraph = false;
+
+    const applyInline = (str: string) =>
+      str
+        .replace(/\*\*(.*?)\*\*/g, '<strong style="color:rgba(255,255,255,0.95);font-weight:600;">$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em style="color:rgba(255,255,255,0.75);font-style:italic;">$1</em>');
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+
+      if (!trimmed) {
+        if (inParagraph) {
+          result.push('</p>');
+          inParagraph = false;
+        }
+        continue;
+      }
+
+      if (trimmed.startsWith('### ')) {
+        if (inParagraph) { result.push('</p>'); inParagraph = false; }
+        result.push(`<h3 style="color:rgba(255,255,255,0.95);font-size:1rem;font-weight:600;margin:1.25rem 0 0.5rem;">${applyInline(trimmed.slice(4))}</h3>`);
+      } else if (trimmed.startsWith('## ')) {
+        if (inParagraph) { result.push('</p>'); inParagraph = false; }
+        result.push(`<h2 style="color:rgba(255,255,255,0.95);font-size:1.15rem;font-weight:700;margin:1.5rem 0 0.6rem;">${applyInline(trimmed.slice(3))}</h2>`);
+      } else if (trimmed.startsWith('# ')) {
+        if (inParagraph) { result.push('</p>'); inParagraph = false; }
+        result.push(`<h1 style="color:rgba(255,255,255,0.95);font-size:1.35rem;font-weight:700;margin:1.75rem 0 0.75rem;">${applyInline(trimmed.slice(2))}</h1>`);
+      } else if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+        if (inParagraph) { result.push('</p>'); inParagraph = false; }
+        result.push(`<li style="color:rgba(255,255,255,0.8);margin-left:1.25rem;margin-bottom:0.35rem;list-style:disc;">` +
+          applyInline(trimmed.slice(2)) + `</li>`);
+      } else {
+        if (!inParagraph) {
+          result.push('<p style="color:rgba(255,255,255,0.8);line-height:1.75;margin-bottom:0.9rem;">');
+          inParagraph = true;
+        } else {
+          result.push(' ');
+        }
+        result.push(applyInline(trimmed));
+      }
+    }
+
+    if (inParagraph) result.push('</p>');
+    return result.join('');
   };
   
   const getStatusColor = () => {
@@ -157,13 +193,13 @@ export function StreamingContentDisplay({
   return (
     <div className="glass-card rounded-3xl border border-border h-full flex flex-col relative overflow-hidden">
       {/* Background Pattern */}
-      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-purple-600/5 opacity-30" />
+      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-primary/3 opacity-30" />
       
       <div className="relative z-10 h-full flex flex-col">
         <div className="flex-shrink-0 p-6 border-b border-border">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-gradient-to-br from-primary/20 to-purple-600/10 border border-border">
+              <div className="p-2 rounded-xl bg-primary/10 border border-border">
                 <div className={`w-5 h-5 ${getStatusColor()} rounded-lg flex items-center justify-center`}>
                   {getStatusIcon()}
                 </div>
@@ -210,7 +246,7 @@ export function StreamingContentDisplay({
           {isStreaming && (
             <div className="mt-4">
               <div className="w-full bg-surface-2 rounded-full h-2 overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-primary to-purple-600 rounded-full animate-pulse" />
+                <div className="h-full bg-primary rounded-full animate-pulse" />
               </div>
               <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
                 <Clock className="h-3 w-3" />
@@ -306,14 +342,10 @@ export function StreamingContentDisplay({
             
             <div className="relative z-10">
               {content ? (
-                <div className="prose prose-invert max-w-none">
-                  <div 
-                    className="text-foreground leading-relaxed"
-                    dangerouslySetInnerHTML={{ 
-                      __html: formatContent(content) 
-                    }}
-                  />
-                </div>
+                <div
+                  style={{ color: 'rgba(255,255,255,0.8)', lineHeight: '1.75' }}
+                  dangerouslySetInnerHTML={{ __html: formatContent(content) }}
+                />
               ) : (
                 <div className="text-muted-foreground text-center py-12">
                   {isStreaming ? (

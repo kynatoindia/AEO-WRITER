@@ -67,18 +67,18 @@ export function BlueprintSidebar({
       case 'writing':
         return <Zap className="h-4 w-4 text-blue-500 animate-pulse" />;
       default:
-        return <Circle className="h-4 w-4 text-gray-400" />;
+        return <Circle className="h-4 w-4 text-white/40" />;
     }
   };
   
   const getStatusColor = (status: 'pending' | 'writing' | 'completed') => {
     switch (status) {
       case 'completed':
-        return 'bg-green-100 border-green-200';
+        return 'bg-green-500/10 border-green-500/25';
       case 'writing':
-        return 'bg-blue-100 border-blue-200';
+        return 'bg-primary/10 border-primary/30';
       default:
-        return 'bg-gray-50 border-gray-200';
+        return 'bg-white/4 border-white/10';
     }
   };
   
@@ -122,7 +122,7 @@ export function BlueprintSidebar({
               <div>Writing</div>
             </div>
             <div className="text-center">
-              <div className="font-medium text-gray-600">
+              <div className="font-medium text-white/60">
                 {totalSections - completedSections}
               </div>
               <div>Remaining</div>
@@ -193,7 +193,7 @@ export function BlueprintSidebar({
                         className={`
                           p-3 rounded-lg border cursor-pointer transition-all
                           ${getStatusColor(status)}
-                          ${isSelected ? 'ring-2 ring-blue-500 ring-opacity-50' : ''}
+                          ${isSelected ? 'ring-2 ring-primary/50' : ''}
                           hover:shadow-sm
                         `}
                         onClick={() => onSectionSelect(section.id)}
@@ -250,7 +250,7 @@ export function BlueprintSidebar({
                           {section.subSections.map((subSection, subIndex) => (
                             <div 
                               key={subSection.id}
-                              className="p-2 rounded border border-gray-100 bg-white"
+                              className="p-2 rounded border border-white/8 bg-white/4"
                             >
                               <div className="flex items-start gap-2">
                                 <span className="text-xs text-muted-foreground flex-shrink-0">
@@ -264,12 +264,12 @@ export function BlueprintSidebar({
                                     <ul className="text-xs text-muted-foreground mt-1 space-y-0.5">
                                       {subSection.keyPoints.slice(0, 3).map((point, pointIndex) => (
                                         <li key={pointIndex} className="flex items-start gap-1">
-                                          <span className="text-gray-400">•</span>
+                                          <span className="text-white/40">•</span>
                                           <span className="line-clamp-1">{point}</span>
                                         </li>
                                       ))}
                                       {subSection.keyPoints.length > 3 && (
-                                        <li className="text-gray-400 text-xs">
+                                        <li className="text-white/40 text-xs">
                                           +{subSection.keyPoints.length - 3} more points
                                         </li>
                                       )}
