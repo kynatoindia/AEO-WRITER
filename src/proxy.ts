@@ -74,7 +74,7 @@ export default async function proxy(request: NextRequest) {
       const endpoint = request.nextUrl.pathname;
       if (endpoint.includes('/api/ai/') || endpoint.includes('/api/content/')) {
         const globalResult = await checkGlobalRateLimit(endpoint, 300, 1000); // 5 min window, 1000 requests
-        
+
         if (!globalResult.allowed) {
           return NextResponse.json(
             {
@@ -129,7 +129,7 @@ export default async function proxy(request: NextRequest) {
       supabaseResponse.headers.set('X-RateLimit-Limit', (endpoint.includes('/api/ai/') ? 5 : 20).toString());
       supabaseResponse.headers.set('X-RateLimit-Remaining', rateLimitResult.remaining.toString());
       supabaseResponse.headers.set('X-RateLimit-Reset', rateLimitResult.resetTime.toString());
-      
+
     } catch (error) {
       console.error('Rate limiting error in middleware:', error);
       // Continue without rate limiting on error to avoid blocking legitimate requests
@@ -147,7 +147,7 @@ export default async function proxy(request: NextRequest) {
   // Redirect authenticated users away from auth pages
   const authPaths = ['/auth/login', '/auth/register', '/auth/forgot-password'];
   const isAuthPath = authPaths.some(path => request.nextUrl.pathname.startsWith(path));
-  
+
   if (isAuthPath && user) {
     const url = request.nextUrl.clone();
     url.pathname = '/dashboard';
